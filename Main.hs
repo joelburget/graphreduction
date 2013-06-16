@@ -54,3 +54,13 @@ main = do
                                   (EVar "a"))))))
         ]
 
+    T.putStrLn $ showResults $ eval $ compile
+        [ ("id", ["x"], EVar "x")
+        , ("main", [], EAp
+                           (EAp
+                               (EAp (EVar "twice")
+                                    (EVar "twice"))
+                               (EVar "id"))
+                           (ENum 3))
+        ]
+

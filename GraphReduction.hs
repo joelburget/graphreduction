@@ -82,9 +82,10 @@ initialTidump = DummyTiDump
 type TiHeap = Heap Node
 
 data Node
-    = NAp Addr Addr
-    | NSupercomb Name [Name] CoreExpr
-    | NNum Int
+    = NAp Addr Addr                   -- Application
+    | NSupercomb Name [Name] CoreExpr -- Supercombinator
+    | NNum Int                        -- Number
+    | NInd Addr                       -- Indirection
 
 type TiGlobals = H.HashMap Name Addr
 
@@ -145,10 +146,14 @@ isDataNode node = False
 
 step :: TiState -> TiState
 step state = dispatch $ hLookup heap $ head stack where
-    (stack, _, heap, _, _) = state
+    (stack, dump, heap, globals, stats) = state
     dispatch (NNum n) = numStep state n
     dispatch (NAp a1 a2) = apStep state a1 a2
     dispatch (NSupercomb sc args body) = scStep state sc args body
+    --         a :s    d    h[a:NInd a1]    f
+    --     ==> a1:s    d    h               f
+    dispatch (NInd a1) = (a1 : (drop 1 stack), dump, hFree heap (head stack),
+        globals, stats) -- TODO update stats?
 
 numStep :: TiState -> Int -> TiState
 numStep _ _ = error "Number applied as a function!"
@@ -158,18 +163,71 @@ apStep :: TiState -> Addr -> Addr -> TiState
 apStep (stack, dump, heap, globals, stats) a1 _ =
     (a1:stack, dump, heap, globals, stats)
 
+-- | Step a supercombinator. Described by the transition rule:
+--
+--         a0:a1:...:an:s    d    h[a0:NSupercomb[x1, ..., xn] body]    f
+--     ==>           ar:s    d    h'[an:NInd ar]                        f
+--     where (h', ar) = instantiate body h f [x1 -> a1, ..., xn -> an]
+--
+-- In other words, overwrite node an (the root of the redex) with an
+-- indirection to ar (the root of the result). If the supercombinator is
+-- a CAF then n=0 and the node to be modified is the supercombinator node
+-- itself.
 scStep :: TiState -> Name -> [Name] -> CoreExpr -> TiState
 scStep (stack, dump, heap, globals, stats) sc_name arg_names body =
     (new_stack, dump, new_heap, globals, stats)
     where
-        new_stack = result_addr : (drop (length arg_names + 1) stack)
-        (new_heap, result_addr) = instantiate body heap env
-        env = H.union (H.fromList arg_bindings) globals
-        arg_bindings = zip arg_names $ getargs heap stack
+    new_stack = drop (length arg_names) stack
+    arg_bindings = zip arg_names $ getargs heap stack
+    env = H.union (H.fromList arg_bindings) globals
+    body_addr = head new_stack
+    new_heap = instantiateAndUpdate body body_addr heap env
 
 getargs :: TiHeap -> TiStack -> [Addr]
 getargs heap (sc:stack) = map get_arg stack where
     get_arg addr = arg where (NAp fun arg) = hLookup heap addr
+
+{-
+ - Instantiate the given supercombinator body, writing over the given
+ - address, if possible
+ -}
+instantiateAndUpdate :: CoreExpr            -- ^ body of supercombinator
+                     -> Addr                -- ^ address of node to update
+                     -> TiHeap              -- ^ heap before instantiation
+                     -- | associate parameters to addresses
+                     -> H.HashMap Name Addr
+                     -> TiHeap              -- ^ heap after instantiation
+instantiateAndUpdate (ENum n) upd_addr heap _ = hUpdate heap upd_addr $ NNum n
+-- replace the old application with the result of instantiation
+instantiateAndUpdate (EAp e1 e2) upd_addr heap env =
+    hUpdate heap2 upd_addr (NAp a1 a2)
+    where
+    (heap1, a1) = instantiate e1 heap env
+    (heap2, a2) = instantiate e2 heap1 env
+instantiateAndUpdate ev@(EVar v) upd_addr heap env =
+    hUpdate heap' upd_addr $ NInd addr
+    where
+    (heap', addr) = instantiate ev heap env
+instantiateAndUpdate (EConstr tag arity) upd_addr heap env = error "Not yet!"
+instantiateAndUpdate (ELet isrec defs body) upd_addr heap env =
+    instantiateAndUpdateLet isrec defs body upd_addr heap env
+instantiateAndUpdate (ECase e alts) upd_addr heap env = error "Not yet!"
+
+{-
+ - Instantiate the right-hand side of each of the definitions in defs, at
+ - the same time augment the environment to bind the names in defs to the
+ - addresses of the newly constructed instances. Then instantiate the body
+ - of the let with the augmented environment.
+ -}
+instantiateAndUpdateLet isrec defs body upd_addr heap env = result where
+    (resultHeap, resultEnv) = foldl' (\(heap', env') (a, expr) ->
+        let thisEnv = case isrec of
+                Recursive -> resultEnv
+                NonRecursive -> env'
+            (heap'', addr) = (instantiate expr heap' thisEnv)
+            env'' = H.insert a addr env'
+        in (heap'', env'')) (heap, env) defs
+    result = instantiateAndUpdate body upd_addr resultHeap resultEnv
 
 instantiate :: CoreExpr -- ^ body of supercombinator
             -> TiHeap   -- ^ heap before instantiation
@@ -195,16 +253,12 @@ instantiateConstr _ _ _ _ = error "Can't instantiate constructors yet"
  - addresses of the newly constructed instances. Then instantiate the body
  - of the let with the augmented environment.
  -}
-instantiateLet NonRecursive defs body heap env = result where
+instantiateLet isrec defs body heap env = result where
     (resultHeap, resultEnv) = foldl' (\(heap', env') (a, expr) ->
-        let (heap'', addr) = (instantiate expr heap' env')
-            env'' = H.insert a addr env'
-        in (heap'', env'')) (heap, env) defs
-    result = instantiate body resultHeap resultEnv
-
-instantiateLet Recursive defs body heap env = result where
-    (resultHeap, resultEnv) = foldl' (\(heap', env') (a, expr) ->
-        let (heap'', addr) = (instantiate expr heap' resultEnv)
+        let thisEnv = case isrec of
+                Recursive -> resultEnv
+                NonRecursive -> env'
+            (heap'', addr) = (instantiate expr heap' thisEnv)
             env'' = H.insert a addr env'
         in (heap'', env'')) (heap, env) defs
     result = instantiate body resultHeap resultEnv
@@ -252,6 +306,7 @@ showNode (NAp a1 a2) = hcat
     ]
 showNode (NSupercomb name args body) = text $ fromStrict $ "NSupercomb " `append` name
 showNode (NNum n) = text "NNum " <> int n
+showNode (NInd p) = text "Indirection " <> int p
 
 showAddr :: Addr -> Doc
 showAddr addr = int addr
