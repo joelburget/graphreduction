@@ -54,6 +54,8 @@ main = do
                                   (EVar "a"))))))
         ]
 
+    -- id x = x
+    -- main = twice twice id 3
     T.putStrLn $ showResults $ eval $ compile
         [ ("id", ["x"], EVar "x")
         , ("main", [], EAp
@@ -64,3 +66,49 @@ main = do
                            (ENum 3))
         ]
 
+    -- main = negate 3
+    T.putStrLn $ showResults $ eval $ compile
+        [("main", [], EAp (EVar "negate") (ENum 3))]
+
+    -- main = twice negate 3
+    T.putStrLn $ showResults $ eval $ compile
+        [("main", [], EAp
+                          (EAp
+                              (EVar "twice")
+                              (EVar "negate"))
+                          (ENum 3))
+        ]
+
+    -- main = negate (I 3)
+    T.putStrLn $ showResults $ eval $ compile
+        [("main", [], EAp (EVar "negate")
+                          (EAp (EVar "I") (ENum 3)))
+        ]
+
+    -- main = 1 + 2
+    T.putStrLn $ showResults $ eval $ compile
+        [("main", [], EAp (EAp (EVar "+")
+                               (ENum 1))
+                          (ENum 2))
+        ]
+
+    -- main = 1 - 2
+    T.putStrLn $ showResults $ eval $ compile
+        [("main", [], EAp (EAp (EVar "-")
+                               (ENum 1))
+                          (ENum 2))
+        ]
+
+    -- main = 1 * 2
+    T.putStrLn $ showResults $ eval $ compile
+        [("main", [], EAp (EAp (EVar "*")
+                               (ENum 1))
+                          (ENum 2))
+        ]
+
+    -- main = 1 / 2
+    T.putStrLn $ showResults $ eval $ compile
+        [("main", [], EAp (EAp (EVar "/")
+                               (ENum 1))
+                          (ENum 2))
+        ]
