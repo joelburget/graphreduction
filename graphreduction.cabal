@@ -22,14 +22,16 @@ library
     text >= 0.11,
     wl-pprint-text >= 1,
     containers >= 0.5,
-    unordered-containers >= 0.2
+    unordered-containers >= 0.2,
+    lens >= 3.9
 executable main
   main-is: Main.hs
-  ghc-options: -prof -auto-all
+  -- ghc-options: -prof -auto-all
   build-depends:
     base == 4.6.*,
     text >= 0.11,
     wl-pprint-text >= 1,
     containers >= 0.5,
     unordered-containers >= 0.2,
+    lens >= 3.9,
     graphreduction

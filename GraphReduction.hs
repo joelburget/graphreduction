@@ -1,18 +1,22 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 -- Implementing Functional Languages: a tutorial
 -- Template Instantiation language
 module GraphReduction where
 
+import Control.Lens
 import qualified Data.IntMap.Lazy as M
 import qualified Data.HashMap.Lazy as H
 import Data.List (intersperse, mapAccumL, foldl')
+import Data.Maybe (fromMaybe)
 import Data.Text hiding (length, intersperse, last, map, head, zip, drop,
                         mapAccumL, foldl', tail, null)
 import Data.Text.Lazy (fromStrict, toStrict)
 import Text.PrettyPrint.Leijen.Text
 import Prelude hiding (intersperse)
 
-import Utils
+import qualified Utils as U
+import Utils (Addr, Heap)
 
 data Expr a
     = EVar Name             -- ^ variable
@@ -58,14 +62,6 @@ type CoreProgram = Program Name
 type ScDefn a = (Name, [a], Expr a)
 type CoreScDefn = ScDefn Name
 
--- primitives :: H.HashMap Name Primitive
-primitives :: [(Name, Primitive)]
-primitives =
-    [ ("negate", Neg)
-    , ("+", Add), ("-", Sub)
-    , ("*", Mul), ("/", Div)
-    ]
-
 preludeDefs :: CoreProgram
 preludeDefs =
     [ ("I",  ["x"], EVar "x")
@@ -80,15 +76,11 @@ preludeDefs =
 
 -- begin ch 2
 
-type TiState = (TiStack, TiDump, TiHeap, TiGlobals, TiStats)
-
 -- The spine stack is a stack of heap addresses
 type TiStack = [Addr]
 
 type TiDump = [TiStack]
 initialTidump = []
-
-type TiHeap = Heap Node
 
 data Node
     = NAp Addr Addr                   -- ^ Application
@@ -98,6 +90,8 @@ data Node
     | NPrim Name Primitive            -- ^ Primitive
     deriving (Show)
 
+type TiHeap = Heap Node
+
 data Primitive
     = Neg
     | Add
@@ -106,48 +100,63 @@ data Primitive
     | Div
     deriving (Show)
 
+type TiStats = Int
+
 type TiGlobals = H.HashMap Name Addr
+
+data TiState = TiState
+    { _stack   :: TiStack
+    , _dump    :: TiDump
+    , _heap    :: TiHeap
+    , _globals :: TiGlobals
+    , _stats   :: TiStats
+    }
+makeLenses ''TiState
+
+-- primitives :: H.HashMap Name Primitive
+primitives :: [(Name, Primitive)]
+primitives =
+    [ ("negate", Neg)
+    , ("+", Add), ("-", Sub)
+    , ("*", Mul), ("/", Div)
+    ]
 
 tiStatInitial :: TiStats
 tiStatIncSteps :: TiStats -> TiStats
 tiStatGetSteps :: TiStats -> Int
 
-type TiStats = Int
 tiStatInitial = 0
 tiStatIncSteps = (+1)
 tiStatGetSteps = id
 
--- TODO use lens
 applyToStats :: (TiStats -> TiStats) -> TiState -> TiState
-applyToStats stats_fun (stack, dump, heap, sc_defs, stats) =
-    (stack, dump, heap, sc_defs, stats_fun stats)
+applyToStats stats_fun state = state & stats %~ stats_fun
 
 -- | create the initial state of the machine from the program
 compile :: CoreProgram -> TiState
 compile program =
-    (initial_stack, initialTidump, initial_heap, globals, tiStatInitial)
+    TiState initial_stack initialTidump initial_heap globals tiStatInitial
     where
         sc_defs = program ++ preludeDefs ++ extraPreludeDefs
         (initial_heap, globals) = buildInitialHeap sc_defs
 
+        address_of_main = fromMaybe (error "main is not defined") $ globals ^? ix "main"
         initial_stack = [address_of_main]
-        address_of_main = H.lookupDefault (error "main is not defined") "main" globals
 
 extraPreludeDefs = []
 
--- TODO lens
 buildInitialHeap :: [CoreScDefn] -> (TiHeap, TiGlobals)
 buildInitialHeap sc_defs = (heap2, H.fromList $ sc_addrs ++ prim_addrs)
-    where (heap1, sc_addrs) = mapAccumL allocateSc hInitial sc_defs
+    where (heap1, sc_addrs) = mapAccumL allocateSc U.initial sc_defs
           (heap2, prim_addrs) = mapAccumL allocatePrim heap1 primitives
 
 allocateSc :: TiHeap -> CoreScDefn -> (TiHeap, (Name, Addr))
 allocateSc heap (name, args, body) = (heap', (name, addr))
-    where (heap', addr) = hAlloc heap $ NSupercomb name args body
+    where (heap', addr) = U.alloc heap $ NSupercomb name args body
 
 allocatePrim :: TiHeap -> (Name, Primitive) -> (TiHeap, (Name, Addr))
 allocatePrim heap (name, prim) = (heap', (name, addr))
-    where (heap', addr) = hAlloc heap $ NPrim name prim
+    where (heap', addr) = U.alloc heap $ NPrim name prim
 
 primStep :: TiState -> Primitive -> TiState
 primStep state Neg = primNeg state
@@ -157,29 +166,37 @@ primStep state Mul = primArith state (*)
 primStep state Div = primArith state div
 
 primArith :: TiState -> (Int -> Int -> Int) -> TiState
-primArith (stack, dump, heap, globals, stats) f
-    | length stack > 3 = error $ "More than one argument to arith prim"
-    | length stack < 3 = error $ "No arguments to arith prim"
-    | not (isDataNode arg1) = ([arg1_addr], [stack !! 2]:dump, heap, globals, stats)
-    | not (isDataNode arg2) = ([arg2_addr], [stack !! 2]:dump, heap, globals, stats)
-    | otherwise = (drop 2 stack, dump, hUpdate heap (stack !! 2) (NNum $ f m n),
-                        globals, stats)
-    where arg1_addr = head $ getargs heap stack
-          arg2_addr = head $ tail $ getargs heap stack
-          arg1 = hLookup heap arg1_addr
-          arg2 = hLookup heap arg2_addr
+primArith state f
+    | length stack' > 3 = error $ "More than one argument to arith prim"
+    | length stack' < 3 = error $ "No arguments to arith prim"
+    | not (isDataNode arg1) = state & stack .~ [arg1_addr]
+                                    & dump  %~ ([rootNode]:)
+    | not (isDataNode arg2) = state & stack .~ [arg2_addr]
+                                    & dump  %~ ([rootNode]:)
+    | otherwise = state & stack %~ drop 2
+                        &  heap %~ U.update rootNode (NNum $ m `f` n)
+    where stack' = state^.stack
+          heap' = state^.heap
+          rootNode = stack' !! 2
+          arg1_addr = head $ getargs heap' stack'
+          arg2_addr = head $ tail $ getargs heap' stack'
+          arg1 = U.lookup arg1_addr heap'
+          arg2 = U.lookup arg2_addr heap'
           NNum m = arg1
           NNum n = arg2
 
 primNeg :: TiState -> TiState
-primNeg (stack, dump, heap, globals, stats)
-    | length stack > 2 = error $ "More than one argument to neg"
-    | length stack < 2 = error $ "No arguments to neg"
-    | isDataNode arg = (tail stack, dump, hUpdate heap (stack !! 1) (NNum (-n))
-                       , globals, stats)
-    | otherwise = ([arg_addr], [stack !! 1]:dump, heap, globals, stats)
-    where arg_addr = head $ getargs heap stack
-          arg = hLookup heap arg_addr
+primNeg state
+    | length stack' > 2 = error $ "More than one argument to neg"
+    | length stack' < 2 = error $ "No arguments to neg"
+    | isDataNode arg = state & stack %~ tail
+                             & heap  %~ U.update (stack' !! 1) (NNum (-n))
+    | otherwise = state & stack .~ [arg_addr]
+                        & dump  %~ ([stack' !! 1]:)
+    where stack' = state^.stack
+          heap' = state^.heap
+          arg_addr = head $ getargs heap' stack'
+          arg = U.lookup arg_addr heap'
           NNum n = arg
 
 eval :: TiState -> [TiState]
@@ -192,39 +209,41 @@ doAdmin :: TiState -> TiState
 doAdmin state = applyToStats tiStatIncSteps state
 
 tiFinal :: TiState -> Bool
-tiFinal ([sole_addr], dump, heap, _, _) = dataNode && emptyDump
-    where dataNode = isDataNode $ hLookup heap sole_addr
-          emptyDump = null dump
-tiFinal ([], _, _, _, _) = error "Empty stack!"
-tiFinal state = False
+tiFinal state = case state^.stack of
+    [sole_addr] -> dataNode && emptyDump
+        where dataNode = isDataNode $ U.lookup sole_addr (state^.heap)
+              emptyDump = null $ state^.dump
+    [] -> error "Empty stack!"
+    _ -> False
 
 isDataNode :: Node -> Bool
 isDataNode (NNum n) = True
 isDataNode node = False
 
 step :: TiState -> TiState
-step state = dispatch $ hLookup heap $ head stack where
-    (stack, dump, heap, globals, stats) = state
+step state = dispatch $ U.lookup (head stack') (state^.heap) where
+    stack' = state^.stack
     dispatch (NNum n) = numStep state n
     dispatch (NAp a1 a2) = apStep state a1 a2
     dispatch (NSupercomb sc args body) = scStep state sc args body
     --         a :s    d    h[a:NInd a1]    f
     --     ==> a1:s    d    h               f
-    dispatch (NInd a1) = (a1 : (tail stack), dump, heap, -- hFree heap (head stack),
-        globals, stats) -- TODO update stats?
+    dispatch (NInd a1) = state & stack .~ a1:(tail stack') -- TODO update stats?
+    -- U.free heap (head stack)
     dispatch (NPrim _ prim) = primStep state prim
 
 numStep :: TiState -> Int -> TiState
-numStep (stack, dump, heap, globals, stats) n
-    | length stack == 1 && not (null dump)
-    = (head dump, tail dump, heap, globals, stats)
+numStep state n
+    | state^.stack^.to length == 1 && not (null $ state^.dump)
+    = state & stack .~ head (state^.dump)
+            & dump  %~ tail
 numStep _ _ = error "Number applied as a function!"
 
 -- TODO use lens
 apStep :: TiState -> Addr -> Addr -> TiState
-apStep (stack, dump, heap, globals, stats) a1 a2 = case hLookup heap a2 of
-    NInd a2' -> (stack, dump, hUpdate heap (head stack) (NAp a1 a2'), globals, stats)
-    _ -> (a1:stack, dump, heap, globals, stats)
+apStep state a1 a2 = case state^.heap^.to (U.lookup a2) of
+    NInd a2' -> state & heap  %~ U.update (head (state^.stack)) (NAp a1 a2')
+    _        -> state & stack %~ (a1:)
 
 -- | Step a supercombinator. Described by the transition rule:
 --
@@ -237,18 +256,18 @@ apStep (stack, dump, heap, globals, stats) a1 a2 = case hLookup heap a2 of
 -- a CAF then n=0 and the node to be modified is the supercombinator node
 -- itself.
 scStep :: TiState -> Name -> [Name] -> CoreExpr -> TiState
-scStep (stack, dump, heap, globals, stats) sc_name arg_names body =
-    (new_stack, dump, new_heap, globals, stats)
+scStep state sc_name arg_names body = state & stack .~ new_stack
+                                            & heap  .~ new_heap
     where
-    new_stack = drop (length arg_names) stack
-    arg_bindings = zip arg_names $ getargs heap stack
-    env = H.union (H.fromList arg_bindings) globals
+    new_stack = drop (length arg_names) (state^.stack)
+    arg_bindings = zip arg_names $ getargs (state^.heap) (state^.stack)
+    env = H.union (H.fromList arg_bindings) (state^.globals)
     body_addr = head new_stack
-    new_heap = instantiateAndUpdate body body_addr heap env
+    new_heap = instantiateAndUpdate body body_addr (state^.heap) env
 
 getargs :: TiHeap -> TiStack -> [Addr]
 getargs heap (sc:stack) = map get_arg stack where
-    get_arg addr = arg where (NAp fun arg) = hLookup heap addr
+    get_arg addr = arg where (NAp fun arg) = U.lookup addr heap
 
 {-
  - Instantiate the given supercombinator body, writing over the given
@@ -260,15 +279,15 @@ instantiateAndUpdate :: CoreExpr            -- ^ body of supercombinator
                      -- | associate parameters to addresses
                      -> H.HashMap Name Addr
                      -> TiHeap              -- ^ heap after instantiation
-instantiateAndUpdate (ENum n) upd_addr heap _ = hUpdate heap upd_addr $ NNum n
+instantiateAndUpdate (ENum n) upd_addr heap _ = U.update upd_addr (NNum n) heap
 -- replace the old application with the result of instantiation
 instantiateAndUpdate (EAp e1 e2) upd_addr heap env =
-    hUpdate heap2 upd_addr (NAp a1 a2)
+    U.update upd_addr (NAp a1 a2) heap2
     where
     (heap1, a1) = instantiate e1 heap env
     (heap2, a2) = instantiate e2 heap1 env
 instantiateAndUpdate ev@(EVar v) upd_addr heap env =
-    hUpdate heap upd_addr $ NInd $ H.lookupDefault (error $ "Undefined name " ++ show v) v env
+    U.update upd_addr (NInd $ H.lookupDefault (error $ "Undefined name " ++ show v) v env) heap
 instantiateAndUpdate (EConstr tag arity) upd_addr heap env = error "Not yet!"
 instantiateAndUpdate (ELet isrec defs body) upd_addr heap env =
     instantiateAndUpdateLet isrec defs body upd_addr heap env
@@ -295,8 +314,8 @@ instantiate :: CoreExpr -- ^ body of supercombinator
             -> H.HashMap Name Addr -- ^ association of names to addresses
             -- | heap after instantiation and address of root of instance
             -> (TiHeap, Addr)
-instantiate (ENum n) heap _ = hAlloc heap $ NNum n
-instantiate (EAp e1 e2) heap env = hAlloc heap2 $ NAp a1 a2 where
+instantiate (ENum n) heap _ = U.alloc heap $ NNum n
+instantiate (EAp e1 e2) heap env = U.alloc heap2 $ NAp a1 a2 where
     (heap1, a1) = instantiate e1 heap env
     (heap2, a2) = instantiate e2 heap1 env
 instantiate (EVar v) heap env =
@@ -329,7 +348,7 @@ showResults states = toStrict . displayT . renderPretty 0.9 80 $
     vsep [hsep $ map showState states, showStats $ last states]
 
 showState :: TiState -> Doc
-showState (stack, _, heap, _, _) = showStack heap stack <> line
+showState state = showStack (state^.heap) (state^.stack) <> line
 
 showStack :: TiHeap -> TiStack -> Doc
 showStack heap stack = hcat
@@ -343,7 +362,7 @@ showStack heap stack = hcat
         show_stack_item addr = hcat
             [ showFWAddr addr
             , text ": "
-            , showStkNode heap $ hLookup heap addr
+            , showStkNode heap $ U.lookup addr heap
             ]
 
 showStkNode :: TiHeap -> Node -> Doc
@@ -353,7 +372,7 @@ showStkNode heap (NAp fun_addr arg_addr) = hcat
     , text " "
     , showFWAddr arg_addr
     , text " ("
-    , showNode $ hLookup heap arg_addr
+    , showNode $ heap^.to (U.lookup arg_addr)
     , text ")"
     ]
 showStkNode heap node = showNode node
@@ -375,9 +394,9 @@ showAddr addr = int addr
 showFWAddr addr = indent (4 - (length $ show addr)) $ int addr where
 
 showStats :: TiState -> Doc
-showStats (_, _, _, _, stats) = hcat
+showStats state = hcat
     [ line
     , text "Total number of steps = "
-    , int $ tiStatGetSteps stats
+    , int $ tiStatGetSteps $ state^.stats
     , line
     ]
