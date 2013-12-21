@@ -130,25 +130,25 @@ tiStatIncSteps = (+1)
 tiStatGetSteps = id
 
 applyToStats :: (TiStats -> TiStats) -> TiState -> TiState
-applyToStats stats_fun state = state & stats %~ stats_fun
+applyToStats statsFun state = state & stats %~ statsFun
 
 -- | create the initial state of the machine from the program
 compile :: CoreProgram -> TiState
 compile program =
-    TiState initial_stack initialTidump initial_heap globals tiStatInitial
+    TiState initialStack initialTidump initialHeap globals tiStatInitial
     where
-        sc_defs = program ++ preludeDefs ++ extraPreludeDefs
-        (initial_heap, globals) = buildInitialHeap sc_defs
+        scDefs = program ++ preludeDefs ++ extraPreludeDefs
+        (initialHeap, globals) = buildInitialHeap scDefs
 
-        address_of_main = fromMaybe (error "main is not defined") $ globals ^? ix "main"
-        initial_stack = [address_of_main]
+        addressOfMain = fromMaybe (error "main is not defined") $ globals ^? ix "main"
+        initialStack = [addressOfMain]
 
 extraPreludeDefs = []
 
 buildInitialHeap :: [CoreScDefn] -> (TiHeap, TiGlobals)
-buildInitialHeap sc_defs = (heap2, H.fromList $ sc_addrs ++ prim_addrs)
-    where (heap1, sc_addrs) = mapAccumL allocateSc U.initial sc_defs
-          (heap2, prim_addrs) = mapAccumL allocatePrim heap1 primitives
+buildInitialHeap scDefs = (heap2, H.fromList $ scAddrs ++ primAddrs)
+    where (heap1, scAddrs) = mapAccumL allocateSc U.initial scDefs
+          (heap2, primAddrs) = mapAccumL allocatePrim heap1 primitives
 
 allocateSc :: TiHeap -> CoreScDefn -> (TiHeap, (Name, Addr))
 allocateSc heap (name, args, body) = (heap', (name, addr))
@@ -169,19 +169,19 @@ primArith :: TiState -> (Int -> Int -> Int) -> TiState
 primArith state f
     | length stack' > 3 = error $ "More than one argument to arith prim"
     | length stack' < 3 = error $ "No arguments to arith prim"
-    | not (isDataNode arg1) = state & stack .~ [arg1_addr]
+    | not (isDataNode arg1) = state & stack .~ [arg1Addr]
                                     & dump  %~ ([rootNode]:)
-    | not (isDataNode arg2) = state & stack .~ [arg2_addr]
+    | not (isDataNode arg2) = state & stack .~ [arg2Addr]
                                     & dump  %~ ([rootNode]:)
     | otherwise = state & stack %~ drop 2
                         &  heap %~ U.update rootNode (NNum $ m `f` n)
     where stack' = state^.stack
           heap' = state^.heap
           rootNode = stack' !! 2
-          arg1_addr = head $ getargs heap' stack'
-          arg2_addr = head $ tail $ getargs heap' stack'
-          arg1 = U.lookup arg1_addr heap'
-          arg2 = U.lookup arg2_addr heap'
+          arg1Addr = head $ getargs heap' stack'
+          arg2Addr = head $ tail $ getargs heap' stack'
+          arg1 = U.lookup arg1Addr heap'
+          arg2 = U.lookup arg2Addr heap'
           NNum m = arg1
           NNum n = arg2
 
@@ -191,27 +191,27 @@ primNeg state
     | length stack' < 2 = error $ "No arguments to neg"
     | isDataNode arg = state & stack %~ tail
                              & heap  %~ U.update (stack' !! 1) (NNum (-n))
-    | otherwise = state & stack .~ [arg_addr]
+    | otherwise = state & stack .~ [argAddr]
                         & dump  %~ ([stack' !! 1]:)
     where stack' = state^.stack
           heap' = state^.heap
-          arg_addr = head $ getargs heap' stack'
-          arg = U.lookup arg_addr heap'
+          argAddr = head $ getargs heap' stack'
+          arg = U.lookup argAddr heap'
           NNum n = arg
 
 eval :: TiState -> [TiState]
-eval state = state:rest_states where
-    rest_states | tiFinal state = []
-                | otherwise = eval next_state
-    next_state = doAdmin $ step state
+eval state = state:restStates where
+    restStates | tiFinal state = []
+                | otherwise = eval nextState
+    nextState = doAdmin $ step state
 
 doAdmin :: TiState -> TiState
 doAdmin state = applyToStats tiStatIncSteps state
 
 tiFinal :: TiState -> Bool
 tiFinal state = case state^.stack of
-    [sole_addr] -> dataNode && emptyDump
-        where dataNode = isDataNode $ U.lookup sole_addr (state^.heap)
+    [soleAddr] -> dataNode && emptyDump
+        where dataNode = isDataNode $ U.lookup soleAddr (state^.heap)
               emptyDump = null $ state^.dump
     [] -> error "Empty stack!"
     _ -> False
@@ -256,18 +256,18 @@ apStep state a1 a2 = case state^.heap^.to (U.lookup a2) of
 -- a CAF then n=0 and the node to be modified is the supercombinator node
 -- itself.
 scStep :: TiState -> Name -> [Name] -> CoreExpr -> TiState
-scStep state sc_name arg_names body = state & stack .~ new_stack
-                                            & heap  .~ new_heap
+scStep state _ argNames body = state & stack .~ newStack
+                                            & heap  .~ newHeap
     where
-    new_stack = drop (length arg_names) (state^.stack)
-    arg_bindings = zip arg_names $ getargs (state^.heap) (state^.stack)
-    env = H.union (H.fromList arg_bindings) (state^.globals)
-    body_addr = head new_stack
-    new_heap = instantiateAndUpdate body body_addr (state^.heap) env
+    newStack = drop (length argNames) (state^.stack)
+    argBindings = zip argNames $ getargs (state^.heap) (state^.stack)
+    env = H.union (H.fromList argBindings) (state^.globals)
+    bodyAddr = head newStack
+    newHeap = instantiateAndUpdate body bodyAddr (state^.heap) env
 
 getargs :: TiHeap -> TiStack -> [Addr]
-getargs heap (sc:stack) = map get_arg stack where
-    get_arg addr = arg where (NAp fun arg) = U.lookup addr heap
+getargs heap (sc:stack) = map getArg stack where
+    getArg addr = arg where (NAp fun arg) = U.lookup addr heap
 
 {-
  - Instantiate the given supercombinator body, writing over the given
@@ -279,19 +279,19 @@ instantiateAndUpdate :: CoreExpr            -- ^ body of supercombinator
                      -- | associate parameters to addresses
                      -> H.HashMap Name Addr
                      -> TiHeap              -- ^ heap after instantiation
-instantiateAndUpdate (ENum n) upd_addr heap _ = U.update upd_addr (NNum n) heap
+instantiateAndUpdate (ENum n) updAddr heap _ = U.update updAddr (NNum n) heap
 -- replace the old application with the result of instantiation
-instantiateAndUpdate (EAp e1 e2) upd_addr heap env =
-    U.update upd_addr (NAp a1 a2) heap2
+instantiateAndUpdate (EAp e1 e2) updAddr heap env =
+    U.update updAddr (NAp a1 a2) heap2
     where
     (heap1, a1) = instantiate e1 heap env
     (heap2, a2) = instantiate e2 heap1 env
-instantiateAndUpdate ev@(EVar v) upd_addr heap env =
-    U.update upd_addr (NInd $ H.lookupDefault (error $ "Undefined name " ++ show v) v env) heap
-instantiateAndUpdate (EConstr tag arity) upd_addr heap env = error "Not yet!"
-instantiateAndUpdate (ELet isrec defs body) upd_addr heap env =
-    instantiateAndUpdateLet isrec defs body upd_addr heap env
-instantiateAndUpdate (ECase e alts) upd_addr heap env = error "Not yet!"
+instantiateAndUpdate ev@(EVar v) updAddr heap env =
+    U.update updAddr (NInd $ H.lookupDefault (error $ "Undefined name " ++ show v) v env) heap
+instantiateAndUpdate (EConstr tag arity) updAddr heap env = error "Not yet!"
+instantiateAndUpdate (ELet isrec defs body) updAddr heap env =
+    instantiateAndUpdateLet isrec defs body updAddr heap env
+instantiateAndUpdate (ECase e alts) updAddr heap env = error "Not yet!"
 
 {-
  - Instantiate the right-hand side of each of the definitions in defs, at
@@ -299,7 +299,7 @@ instantiateAndUpdate (ECase e alts) upd_addr heap env = error "Not yet!"
  - addresses of the newly constructed instances. Then instantiate the body
  - of the let with the augmented environment.
  -}
-instantiateAndUpdateLet isrec defs body upd_addr heap env = result where
+instantiateAndUpdateLet isrec defs body updAddr heap env = result where
     (resultHeap, resultEnv) = foldl' (\(heap', env') (a, expr) ->
         let thisEnv = case isrec of
                 Recursive -> resultEnv
@@ -307,7 +307,7 @@ instantiateAndUpdateLet isrec defs body upd_addr heap env = result where
             (heap'', addr) = (instantiate expr heap' thisEnv)
             env'' = H.insert a addr env'
         in (heap'', env'')) (heap, env) defs
-    result = instantiateAndUpdate body upd_addr resultHeap resultEnv
+    result = instantiateAndUpdate body updAddr resultHeap resultEnv
 
 instantiate :: CoreExpr -- ^ body of supercombinator
             -> TiHeap   -- ^ heap before instantiation
@@ -354,25 +354,25 @@ showStack :: TiHeap -> TiStack -> Doc
 showStack heap stack = hcat
     [ text "Stk ["
     , line
-    , nest 2 $ vsep $ map show_stack_item stack
+    , nest 2 $ vsep $ map showStackItem stack
     , line
     , text " ]"
     ]
     where
-        show_stack_item addr = hcat
+        showStackItem addr = hcat
             [ showFWAddr addr
             , text ": "
             , showStkNode heap $ U.lookup addr heap
             ]
 
 showStkNode :: TiHeap -> Node -> Doc
-showStkNode heap (NAp fun_addr arg_addr) = hcat
+showStkNode heap (NAp funAddr argAddr) = hcat
     [ text "NAp "
-    , showFWAddr fun_addr
+    , showFWAddr funAddr
     , text " "
-    , showFWAddr arg_addr
+    , showFWAddr argAddr
     , text " ("
-    , showNode $ heap^.to (U.lookup arg_addr)
+    , showNode $ heap^.to (U.lookup argAddr)
     , text ")"
     ]
 showStkNode heap node = showNode node
