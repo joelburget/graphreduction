@@ -1,0 +1,3 @@
+[submodule "Core-Compiler"]
+	path = Core-Compiler
+	url = https://github.com/benhirsch24/Core-Compiler.git
