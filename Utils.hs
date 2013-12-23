@@ -12,7 +12,7 @@ data Heap a = Heap
     { _size   :: Int
     , _unused :: [Int]
     , _map    :: IntMap a
-    }
+    } deriving (Show)
 makeLenses ''Heap
 
 type Addr = Int
@@ -21,11 +21,11 @@ type Addr = Int
 initial :: Heap a
 initial = Heap 0 [1..] empty
 
--- | Given a heap and an object, hAlloc returns a new heap and an address.
+-- | Given a heap and an object, alloc returns a new heap and an address.
 -- The new heap is exactly the same as the old one, except that the
 -- specified object is found at the address returned.
-alloc :: Heap a -> a -> (Heap a, Addr)
-alloc (Heap size (next:free) cts) n =
+alloc :: a -> Heap a -> (Heap a, Addr)
+alloc n (Heap size (next:free) cts) =
     (Heap (size + 1) free (insert next n cts), next)
 
 -- | Returns a new heap in which the address is now associated with the
@@ -50,7 +50,7 @@ aLookup heap a def = maybe def id (M.lookup a heap)
 addresses :: Heap a -> [Addr]
 addresses heap = heap^.map^.to keys
 
--- | An address guaranteed to differ from every address returned by hAlloc
+-- | An address guaranteed to differ from every address returned by alloc
 null :: Addr
 null = 0
 
