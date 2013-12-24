@@ -165,3 +165,21 @@ main = do
                                          (ENum 1))
                                     (ENum 0))))
         ]
+
+    -- length xs = caseList xs 0 length'
+    -- length' x xs = 1 + length xs
+    -- main = length (Cons 1 Nil)
+    T.putStrLn $ showResults $ eval $ compile
+        [("length", ["xs"], EAp (EAp (EAp (EVar "caseList")
+                                          (EVar "xs"))
+                                     (ENum 0))
+                                (EVar "length'"))
+        ,("length'", ["x", "xs"], EAp (EAp (EVar "+")
+                                           (ENum 1))
+                                      (EAp (EVar "length")
+                                           (EVar "xs")))
+        ,("main", [], EAp (EVar "length")
+                          (EAp (EAp (EVar "Cons")
+                                    (ENum 1))
+                               (EVar "Nil")))
+        ]

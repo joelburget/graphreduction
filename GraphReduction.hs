@@ -56,11 +56,11 @@ isAtomicExpr (EVar v) = True
 isAtomicExpr (ENum n) = True
 isAtomicExpr _ = False
 
-type Program a = [ScDefn a]
-type CoreProgram = Program Name
-
 type ScDefn a = (Name, [a], Expr a)
 type CoreScDefn = ScDefn Name
+
+type Program a = [ScDefn a]
+type CoreProgram = Program Name
 
 preludeDefs :: CoreProgram
 preludeDefs =
@@ -77,6 +77,20 @@ preludeDefs =
     , ("fst", ["p"], EAp (EAp (EVar "casePair") (EVar "p")) (EVar "K"))
     , ("snd", ["p"], EAp (EAp (EVar "casePair") (EVar "p")) (EVar "K1"))
     , ("MkPair", [], EConstr 1 2)
+    , ("Nil", [], EConstr 1 0)
+    , ("Cons", [], EConstr 2 2)
+    -- TODO - hide this in a let
+    , ("head'", ["x", "xs"], EVar "x")
+    , ("head", ["lst"], EAp (EAp (EAp (EVar "caseList")
+                                      (EVar "lst"))
+                                 (EVar "abort"))
+                            (EVar "head'"))
+    -- TODO - hide this in a let
+    , ("tail'", ["x", "xs"], EVar "xs")
+    , ("tail", ["lst"], EAp (EAp (EAp (EVar "caseList")
+                                      (EVar "lst"))
+                                 (EVar "abort"))
+                            (EVar "tail'"))
     ]
 
 -- begin ch 2
@@ -113,6 +127,8 @@ data Primitive
     | Eq
     | NotEq
     | CasePair
+    | Abort
+    | CaseList
     deriving (Show)
 
 type TiStats = Int
@@ -139,6 +155,8 @@ primitives =
     , ("<", Less), ("<=", LessEq)
     , ("==", Eq), ("!=", NotEq)
     , ("casePair", CasePair)
+    , ("abort", Abort)
+    , ("caseList", CaseList)
     ]
 
 tiStatInitial :: TiStats
@@ -193,6 +211,8 @@ primStep state LessEq    = primComp state (<=)
 primStep state Eq        = primComp state (==)
 primStep state NotEq     = primComp state (/=)
 primStep state CasePair = primCasePair state
+primStep state Abort = error "Abort!"
+primStep state CaseList = primCaseList state
 
 primArith :: TiState -> (Int -> Int -> Int) -> TiState
 primArith state f = primDyadic state (\(NNum x) (NNum y) -> (NNum (f x y)))
@@ -288,6 +308,38 @@ primCasePair state
           newHeap = U.update (last stack') (NInd newRoot) heap'''
           newStack = [fAddr, fAppA, newRoot]
 
+primCaseList :: TiState -> TiState
+primCaseList state
+    | length stack' < 4 = error $ "Less than three arguments to caseList"
+    | length stack' > 4 = error $ "More than three arguments to caseList"
+    | isDataNode lst = state & stack .~ newStack
+                             & heap  .~ newHeap
+    | otherwise = state & stack .~ [lstAddr]
+                        & dump  %~ ([stack' !! 3]:)
+    where stack' = state^.stack
+          heap'  = state^.heap
+          args = getargs heap' stack'
+          lstAddr = head args
+          -- TODO - do we need followIndirection?
+          lst = followIndirection (U.lookup lstAddr heap') heap'
+          cnAddr = args !! 1
+          ccAddr = args !! 2
+
+          -- isDataNode case
+          -- caseList Pack{1, 0}        cn cc = cn
+          -- caseList (Pack{2, 2} x xs) cn cc = cc x xs
+          NData tag lstParts = lst
+          (newHeap, newStack) = case tag of
+              -- cn
+              1 -> let heap'' = U.update (last stack') (NInd cnAddr) heap'
+                   in (heap'', drop 3 stack')
+              -- cc x xs
+              2 -> let [xAddr, xsAddr] = lstParts
+                       (heap'', app1)  = U.alloc (NAp ccAddr xAddr) heap'
+                       (heap''', app2) = U.alloc (NAp app1 xsAddr) heap''
+                   in (heap''', [ccAddr, app1, app2])
+
+
 --     a0:a1:...:an:[] d h [ a0:NPrim (PrimConstr t n)    f
 --                           a1:NAp a b1
 --                           ...
@@ -332,14 +384,13 @@ isDataNode (NData _ _) = True
 isDataNode node = False
 
 step :: TiState -> TiState
-step state = dispatch $ U.lookup (head stack') (state^.heap) where
-    stack' = state^.stack
+step state = dispatch $ U.lookup (head (state^.stack)) (state^.heap) where
     dispatch (NNum _) = unDump state
     dispatch (NAp a1 a2) = apStep state a1 a2
     dispatch (NSupercomb sc args body) = scStep state sc args body
     --         a :s    d    h[a:NInd a1]    f
     --     ==> a1:s    d    h               f
-    dispatch (NInd a1) = state & stack .~ a1:(tail stack') -- TODO update stats?
+    dispatch (NInd a1) = state & stack._head .~ a1 -- TODO update stats?
     -- U.free heap (head stack)
     dispatch (NPrim _ prim) = primStep state prim
     dispatch (NData _ _) = unDump state
