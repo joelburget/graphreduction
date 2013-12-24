@@ -138,3 +138,30 @@ main = do
                                            (ENum 1)))))
         ,("main", [], EAp (EVar "fac") (ENum 3))
         ]
+
+    -- main = fst (snd (fst (MkPair (MkPair 1
+    --                              (MkPair 2
+    --                                      3))
+    --                              4)))
+    T.putStrLn $ showResults $ eval $ compile
+        [("main", [], EAp (EVar "fst")
+                          (EAp (EVar "snd")
+                               (EAp (EVar "fst")
+                                    (EAp (EAp (EVar "MkPair")
+                                              (EAp (EAp (EVar "MkPair")
+                                                        (ENum 1))
+                                                   (EAp (EAp (EVar "MkPair")
+                                                             (ENum 2))
+                                                        (ENum 3))))
+                                         (ENum 4)))))
+        ]
+
+    -- 1 + fst (MkPair 1 0)
+    T.putStrLn $ showResults $ eval $ compile
+        [("main", [], EAp (EAp (EVar "+")
+                               (ENum 1))
+                          (EAp (EVar "fst")
+                               (EAp (EAp (EVar "MkPair")
+                                         (ENum 1))
+                                    (ENum 0))))
+        ]

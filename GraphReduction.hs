@@ -74,6 +74,9 @@ preludeDefs =
     , ("twice", ["f"], EAp (EAp (EVar "compose") (EVar "f")) (EVar "f"))
     , ("False", [], EConstr 1 0)
     , ("True", [], EConstr 2 0)
+    , ("fst", ["p"], EAp (EAp (EVar "casePair") (EVar "p")) (EVar "K"))
+    , ("snd", ["p"], EAp (EAp (EVar "casePair") (EVar "p")) (EVar "K1"))
+    , ("MkPair", [], EConstr 1 2)
     ]
 
 -- begin ch 2
@@ -109,6 +112,7 @@ data Primitive
     | LessEq
     | Eq
     | NotEq
+    | CasePair
     deriving (Show)
 
 type TiStats = Int
@@ -134,6 +138,7 @@ primitives =
     , (">", Greater), (">=", GreaterEq)
     , ("<", Less), ("<=", LessEq)
     , ("==", Eq), ("!=", NotEq)
+    , ("casePair", CasePair)
     ]
 
 tiStatInitial :: TiStats
@@ -152,7 +157,7 @@ compile :: CoreProgram -> TiState
 compile program =
     TiState initialStack initialTidump initialHeap globals tiStatInitial
     where
-        scDefs = program ++ preludeDefs ++ extraPreludeDefs
+        scDefs = preludeDefs ++ extraPreludeDefs ++ program
         (initialHeap, globals) = buildInitialHeap scDefs
 
         addressOfMain = fromMaybe (error "main is not defined") $ globals ^? ix "main"
@@ -187,6 +192,7 @@ primStep state Less      = primComp state (<)
 primStep state LessEq    = primComp state (<=)
 primStep state Eq        = primComp state (==)
 primStep state NotEq     = primComp state (/=)
+primStep state CasePair = primCasePair state
 
 primArith :: TiState -> (Int -> Int -> Int) -> TiState
 primArith state f = primDyadic state (\(NNum x) (NNum y) -> (NNum (f x y)))
@@ -241,21 +247,46 @@ primIf :: TiState -> TiState
 primIf state
     | length stack' < 4 = error $ "Less than three arguments to if"
     | length stack' > 4 = error $ "More than three arguments to if"
-    | isDataNode (followIndirection bool heap') = state & stack .~ newStack
-                                                        & heap  .~ newHeap
+    | isDataNode bool = state & stack .~ newStack
+                              & heap  .~ newHeap
     | otherwise = state & stack .~ [boolAddr]
                         & dump  %~ ([stack' !! 3]:)
     where stack' = state^.stack
           heap'  = state^.heap
           args = getargs heap' stack'
           boolAddr = head args
-          bool = U.lookup boolAddr heap'
+          -- TODO - do we need followIndirection?
+          bool = followIndirection (U.lookup boolAddr heap') heap'
 
           -- isDataNode case
           NData t _ = bool
           branchAddr = if t == 1 then args !! 2 else args !! 1
           newHeap = U.update (stack' !! 3) (NInd branchAddr) heap'
           newStack = drop 3 stack'
+
+primCasePair :: TiState -> TiState
+primCasePair state
+    | length stack' < 3 = error $ "Less than two arguments to casePair"
+    | length stack' > 3 = error $ "More than two arguments to casePair"
+    | isDataNode pair = state & stack .~ newStack
+                              & heap  .~ newHeap
+    | otherwise = state & stack .~ [pairAddr]
+                        & dump  %~ ([stack' !! 2]:)
+    where stack' = state^.stack
+          heap'  = state^.heap
+          args = getargs heap' stack'
+          pairAddr = head args
+          -- TODO - do we need followIndirection?
+          pair = followIndirection (U.lookup pairAddr heap') heap'
+
+          -- isDataNode case
+          -- this is disgusting
+          (NData _ [aAddr, bAddr]) = pair
+          fAddr = head $ tail args
+          (heap'', fAppA) = U.alloc (NAp fAddr aAddr) heap'
+          (heap''', newRoot) = U.alloc (NAp fAppA bAddr) heap''
+          newHeap = U.update (last stack') (NInd newRoot) heap'''
+          newStack = [fAddr, fAppA, newRoot]
 
 --     a0:a1:...:an:[] d h [ a0:NPrim (PrimConstr t n)    f
 --                           a1:NAp a b1
@@ -269,13 +300,12 @@ primConstr state tag arity
     | otherwise = state & stack .~ [updAddr]
                         & heap  .~ newHeap
     where stack' = state^.stack
+          heap'  = state^.heap
           -- Get the addr of a component from the address where it's applied
           -- TODO - this is ill-conceived
-          getAddr :: Addr -> Addr
-          getAddr a = case U.lookup a (state^.heap) of NAp _ addr -> addr
-          componentAddrs = map getAddr (tail stack')
+          componentAddrs = getargs heap' stack'
           updAddr = last stack'
-          newHeap = U.update updAddr (NData tag componentAddrs) (state^.heap)
+          newHeap = U.update updAddr (NData tag componentAddrs) heap'
           -- (newHeap, dataAddr) = U.alloc (NData tag componentAddrs) (state^.heap)
           -- (newHeap, dataAddr) = instantiate constr (state^.heap)
 
@@ -340,15 +370,17 @@ scStep :: TiState -> Name -> [Name] -> CoreExpr -> TiState
 scStep state _ argNames body = state & stack .~ newStack
                                      & heap  .~ newHeap
     where
-    newStack = drop (length argNames) (state^.stack)
-    argBindings = zip argNames $ getargs (state^.heap) (state^.stack)
+    stack' = state^.stack
+    heap'  = state^.heap
+    newStack = drop (length argNames) stack'
+    argBindings = zip argNames $ getargs heap' stack'
     env = H.union (H.fromList argBindings) (state^.globals)
     bodyAddr = head newStack
-    newHeap = instantiateAndUpdate body bodyAddr (state^.heap) env
+    newHeap = instantiateAndUpdate body bodyAddr heap' env
 
 getargs :: TiHeap -> TiStack -> [Addr]
 getargs heap (sc:stack) = map getArg stack where
-    getArg addr = arg where (NAp fun arg) = U.lookup addr heap
+    getArg addr = arg where (NAp _ arg) = U.lookup addr heap
 
 {-
  - Instantiate the given supercombinator body, writing over the given
