@@ -12,7 +12,7 @@ import qualified Data.HashMap.Lazy as H
 import Data.List (intersperse, mapAccumL, foldl')
 import Data.Maybe (fromMaybe)
 import Data.Text hiding (length, intersperse, last, map, head, zip, drop,
-                        mapAccumL, foldl', tail, null, concat, foldl)
+                        mapAccumL, foldl', tail, null, concat, foldl, foldl1)
 import Data.Text.Lazy (fromStrict, toStrict)
 import Text.PrettyPrint.Leijen.Text
 import Prelude hiding (intersperse)
@@ -592,15 +592,13 @@ scanHeap heap = newHeap where
         ) heap addrs
 
 gc :: TiState -> TiState
-gc state = state & heap .~ newNewHeap where
-    stack'   = state^.stack
-    dump'    = state^.dump
-    globals' = state^.globals
-    addrs = IntSet.toList $ (IntSet.fromList (findStackRoots stack'))
-             `IntSet.union` (IntSet.fromList (findDumpRoots dump'))
-             `IntSet.union` (IntSet.fromList (findGlobalRoots globals'))
-    newHeap = foldl (\heap' addr -> markFrom heap' addr) (state^.heap) addrs
-    newNewHeap = scanHeap newHeap
+gc state = state & heap .~ newHeap where
+    addrs = IntSet.toList $ foldl1 IntSet.union $ map IntSet.fromList
+        [ findStackRoots  (state^.stack)
+        , findDumpRoots   (state^.dump)
+        , findGlobalRoots (state^.globals)
+        ]
+    newHeap = scanHeap $ foldl markFrom (state^.heap) $ addrs
 
 showResults :: [TiState] -> Text
 showResults states = toStrict . displayT . renderPretty 0.9 80 $
