@@ -156,7 +156,7 @@ main = do
                                          (ENum 4)))))
         ]
 
-    -- 1 + fst (MkPair 1 0)
+    -- main = 1 + fst (MkPair 1 0)
     T.putStrLn $ showResults $ eval $ compile
         [("main", [], EAp (EAp (EVar "+")
                                (ENum 1))
@@ -179,6 +179,13 @@ main = do
                                       (EAp (EVar "length")
                                            (EVar "xs")))
         ,("main", [], EAp (EVar "length")
+                          (EAp (EAp (EVar "Cons")
+                                    (ENum 1))
+                               (EVar "Nil")))
+        ]
+
+    T.putStrLn $ showResults $ eval $ compile
+        [("main", [], EAp (EVar "printList")
                           (EAp (EAp (EVar "Cons")
                                     (ENum 1))
                                (EVar "Nil")))

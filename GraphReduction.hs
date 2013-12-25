@@ -91,6 +91,14 @@ preludeDefs =
                                       (EVar "lst"))
                                  (EVar "abort"))
                             (EVar "tail'"))
+    , ("printList", ["xs"], EAp (EAp (EAp (EVar "caseList")
+                                          (EVar "xs"))
+                                     (EVar "stop"))
+                                (EVar "printCons"))
+    , ("printCons", ["h", "t"], EAp (EAp (EVar "print")
+                                         (EVar "h"))
+                                    (EAp (EVar "printList")
+                                         (EVar "t")))
     ]
 
 -- begin ch 2
@@ -129,14 +137,17 @@ data Primitive
     | CasePair
     | Abort
     | CaseList
+    | Print
+    | Stop
     deriving (Show)
 
+type TiOutput = [Int]
 type TiStats = Int
-
 type TiGlobals = H.HashMap Name Addr
 
 data TiState = TiState
-    { _stack   :: TiStack
+    { _output  :: TiOutput
+    , _stack   :: TiStack
     , _dump    :: TiDump
     , _heap    :: TiHeap
     , _globals :: TiGlobals
@@ -157,6 +168,7 @@ primitives =
     , ("casePair", CasePair)
     , ("abort", Abort)
     , ("caseList", CaseList)
+    , ("print", Print), ("stop", Stop)
     ]
 
 tiStatInitial :: TiStats
@@ -173,7 +185,7 @@ applyToStats statsFun state = state & stats %~ statsFun
 -- | create the initial state of the machine from the program
 compile :: CoreProgram -> TiState
 compile program =
-    TiState initialStack initialTidump initialHeap globals tiStatInitial
+    TiState [] initialStack initialTidump initialHeap globals tiStatInitial
     where
         scDefs = preludeDefs ++ extraPreludeDefs ++ program
         (initialHeap, globals) = buildInitialHeap scDefs
@@ -213,6 +225,8 @@ primStep state NotEq     = primComp state (/=)
 primStep state CasePair = primCasePair state
 primStep state Abort = error "Abort!"
 primStep state CaseList = primCaseList state
+primStep state Print = primPrint state
+primStep state Stop = primStop state
 
 primArith :: TiState -> (Int -> Int -> Int) -> TiState
 primArith state f = primDyadic state (\(NNum x) (NNum y) -> (NNum (f x y)))
@@ -339,6 +353,23 @@ primCaseList state
                        (heap''', app2) = U.alloc (NAp app1 xsAddr) heap''
                    in (heap''', [ccAddr, app1, app2])
 
+primStop :: TiState -> TiState
+primStop state = state & stack .~ []
+
+primPrint :: TiState -> TiState
+primPrint state
+    | b1IsNum = state & output <>~ [n]
+                      & stack .~ [b2]
+    | otherwise = state & stack .~ [b1]
+                        & dump .~ [[stack' !! 2]]
+    where heap'  = state^.heap
+          stack' = state^.stack
+          [b1, b2] = getargs heap' stack'
+          b1' = U.lookup b1 heap'
+          b1IsNum = case b1' of
+              (NNum _) -> True
+              _        -> False
+          NNum n = b1'
 
 --     a0:a1:...:an:[] d h [ a0:NPrim (PrimConstr t n)    f
 --                           a1:NAp a b1
@@ -372,10 +403,10 @@ doAdmin state = applyToStats tiStatIncSteps state
 
 tiFinal :: TiState -> Bool
 tiFinal state = case state^.stack of
+    [] -> True
     [soleAddr] -> dataNode && emptyDump
         where dataNode = isDataNode $ U.lookup soleAddr (state^.heap)
               emptyDump = null $ state^.dump
-    [] -> error "Empty stack!"
     _ -> False
 
 isDataNode :: Node -> Bool
