@@ -6,11 +6,13 @@ module GraphReduction where
 
 import Control.Lens
 import qualified Data.IntMap.Lazy as M
+import Data.IntSet (IntSet)
+import qualified Data.IntSet as IntSet
 import qualified Data.HashMap.Lazy as H
 import Data.List (intersperse, mapAccumL, foldl')
 import Data.Maybe (fromMaybe)
 import Data.Text hiding (length, intersperse, last, map, head, zip, drop,
-                        mapAccumL, foldl', tail, null)
+                        mapAccumL, foldl', tail, null, concat, foldl)
 import Data.Text.Lazy (fromStrict, toStrict)
 import Text.PrettyPrint.Leijen.Text
 import Prelude hiding (intersperse)
@@ -116,6 +118,7 @@ data Node
     | NInd Addr                       -- ^ Indirection
     | NPrim Name Primitive            -- ^ Primitive
     | NData Int [Addr]                -- ^ Tag, list of components
+    | NMarked Node                    -- ^ Marked node
     deriving (Show)
 
 type TiHeap = Heap Node
@@ -399,7 +402,7 @@ eval state = state:restStates where
     nextState = doAdmin $ step state
 
 doAdmin :: TiState -> TiState
-doAdmin state = applyToStats tiStatIncSteps state
+doAdmin state = gc $ applyToStats tiStatIncSteps state
 
 tiFinal :: TiState -> Bool
 tiFinal state = case state^.stack of
@@ -422,7 +425,6 @@ step state = dispatch $ U.lookup (head (state^.stack)) (state^.heap) where
     --         a :s    d    h[a:NInd a1]    f
     --     ==> a1:s    d    h               f
     dispatch (NInd a1) = state & stack._head .~ a1 -- TODO update stats?
-    -- U.free heap (head stack)
     dispatch (NPrim _ prim) = primStep state prim
     dispatch (NData _ _) = unDump state
 
@@ -555,6 +557,50 @@ instantiateLet isrec defs body heap env = result where
             env'' = H.insert a addr env'
         in (heap'', env'')) (heap, env) defs
     result = instantiate body resultHeap resultEnv
+
+-- Garbage Collection
+
+findStackRoots :: TiStack -> [Addr]
+findStackRoots = id -- overeager, but fine?
+findDumpRoots :: TiDump -> [Addr]
+findDumpRoots = concat -- also overeager
+findGlobalRoots :: TiGlobals -> [Addr]
+findGlobalRoots = H.elems
+
+markFrom :: TiHeap -> Addr -> TiHeap
+markFrom heap addr = resultHeap
+    where node = U.lookup addr heap
+          heap' = U.update addr (NMarked node) heap
+          resultHeap = case node of
+              -- dirrrrrrrrty - use the original heap instead of the newly
+              -- marked one
+              NMarked _ -> heap
+
+              NAp a1 a2 -> let heap'' = markFrom heap' a1
+                           in markFrom heap'' a2
+              NData _ addrs ->
+                  foldl (\heap'' node' -> markFrom heap'' node') heap' addrs
+              NInd indAddr -> markFrom heap' indAddr
+              _ -> heap'
+
+scanHeap :: TiHeap -> TiHeap
+scanHeap heap = newHeap where
+    addrs = U.addresses heap
+    newHeap = foldl (\heap' addr -> case U.lookup addr heap of
+        NMarked node -> U.update addr node heap'
+        _            -> U.free addr heap'
+        ) heap addrs
+
+gc :: TiState -> TiState
+gc state = state & heap .~ newNewHeap where
+    stack'   = state^.stack
+    dump'    = state^.dump
+    globals' = state^.globals
+    addrs = IntSet.toList $ (IntSet.fromList (findStackRoots stack'))
+             `IntSet.union` (IntSet.fromList (findDumpRoots dump'))
+             `IntSet.union` (IntSet.fromList (findGlobalRoots globals'))
+    newHeap = foldl (\heap' addr -> markFrom heap' addr) (state^.heap) addrs
+    newNewHeap = scanHeap newHeap
 
 showResults :: [TiState] -> Text
 showResults states = toStrict . displayT . renderPretty 0.9 80 $

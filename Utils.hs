@@ -34,8 +34,8 @@ update :: Addr -> a -> Heap a -> Heap a
 update a n (Heap size free cts) = (Heap size free (adjust (const n) a cts))
 
 -- | Returns a new heap with the specified object removed
-free :: Heap a -> Addr -> Heap a
-free (Heap size free cts) a = (Heap (size - 1) (a:free) (delete a cts))
+free :: Addr -> Heap a -> Heap a
+free a (Heap size free cts) = (Heap (size - 1) (a:free) (delete a cts))
 
 -- | Return the object associated with the address
 lookup :: Addr -> Heap a -> a
