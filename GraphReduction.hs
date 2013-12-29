@@ -560,45 +560,59 @@ instantiateLet isrec defs body heap env = result where
 
 -- Garbage Collection
 
-findStackRoots :: TiStack -> [Addr]
-findStackRoots = id -- overeager, but fine?
-findDumpRoots :: TiDump -> [Addr]
-findDumpRoots = concat -- also overeager
-findGlobalRoots :: TiGlobals -> [Addr]
-findGlobalRoots = H.elems
+markFromStack :: TiState -> TiState
+markFromStack state = state & stack .~ newStack
+                            & heap  .~ newHeap
+    where (newHeap, newStack) = mapAccumL markFrom (state^.heap) (state^.stack)
 
-markFrom :: TiHeap -> Addr -> TiHeap
-markFrom heap addr = resultHeap
+markFromDump :: TiState -> TiState
+markFromDump state = state & dump .~ newDump
+                           & heap .~ newHeap
+    where (newHeap, newDump) = mapAccumLOf
+              (traverse.traverse) markFrom (state^.heap) (state^.dump)
+
+markFromGlobals :: TiState -> TiState
+markFromGlobals state = state & globals .~ newGlobals
+                              & heap    .~ newHeap
+    where (newHeap, newGlobals) =
+              mapAccumLOf traverse markFrom (state^.heap) (state^.globals)
+
+
+-- Note that for NAp and NData we have to update the node *twice* - once
+-- to mark the node before marking its children to avoid looping and again
+-- after we've marked its children to use their new addresses.
+markFrom :: TiHeap -> Addr -> (TiHeap, Addr)
+markFrom heap addr = (resultHeap, resultAddr)
     where node = U.lookup addr heap
-          heap' = U.update addr (NMarked node) heap
-          resultHeap = case node of
-              -- dirrrrrrrrty - use the original heap instead of the newly
-              -- marked one
-              NMarked _ -> heap
+          (resultHeap, resultAddr) = case node of
+              NMarked _ -> (heap, addr)
+              NAp a1 a2 -> let heap' = U.update addr (NMarked node) heap
+                               (heap'',  a1') = markFrom heap'  a1
+                               (heap''', a2') = markFrom heap'' a2
+                           in (U.update addr (NMarked (NAp a1' a2')) heap''',
+                               addr)
+              NData tag addrs ->
+                  let helper :: (TiHeap, [Addr]) -> Addr -> (TiHeap, [Addr])
+                      helper (heap'', addrs') nodeAddr =
+                          let (heap''', subAddr') = markFrom heap'' nodeAddr
+                          in (heap''', addrs' ++ [subAddr'])
+                      heap' = U.update addr (NMarked node) heap
+                      (newHeap, newAddrs) = foldl helper (heap', []) addrs
+                  in (U.update addr (NMarked (NData tag newAddrs)) newHeap,
+                      addr)
+              NInd indAddr -> markFrom heap indAddr
+              _ -> (U.update addr (NMarked node) heap, addr)
 
-              NAp a1 a2 -> let heap'' = markFrom heap' a1
-                           in markFrom heap'' a2
-              NData _ addrs ->
-                  foldl (\heap'' node' -> markFrom heap'' node') heap' addrs
-              NInd indAddr -> markFrom heap' indAddr
-              _ -> heap'
-
-scanHeap :: TiHeap -> TiHeap
-scanHeap heap = newHeap where
-    addrs = U.addresses heap
-    newHeap = foldl (\heap' addr -> case U.lookup addr heap of
+scanHeap :: TiState -> TiState
+scanHeap state = state & heap .~ newHeap where
+    addrs = U.addresses (state^.heap)
+    newHeap = foldl (\heap' addr -> case U.lookup addr (state^.heap) of
         NMarked node -> U.update addr node heap'
         _            -> U.free addr heap'
-        ) heap addrs
+        ) (state^.heap) addrs
 
 gc :: TiState -> TiState
-gc state = state & heap .~ newHeap where
-    addrs = IntSet.toList $ foldl1 IntSet.union $ map IntSet.fromList
-        [ findStackRoots  (state^.stack)
-        , findDumpRoots   (state^.dump)
-        , findGlobalRoots (state^.globals)
-        ]
-    newHeap = scanHeap $ foldl markFrom (state^.heap) $ addrs
+gc = scanHeap . markFromStack . markFromDump . markFromGlobals
 
 showResults :: [TiState] -> Text
 showResults states = toStrict . displayT . renderPretty 0.9 80 $
