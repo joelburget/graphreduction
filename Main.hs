@@ -1,10 +1,27 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 
+import Control.Lens
 import Control.Monad
 import qualified Data.Text.IO as T
 
+import Text.PrettyPrint.Leijen.Text
+import Data.Text.Lazy (toStrict)
+import Data.Text (pack)
+
+import GarbageCollection
 import GraphReduction
+import Pretty
+import Step
+
+doAdmin :: TiState -> TiState
+doAdmin = gc . applyToStats tiStatIncSteps
+
+eval :: TiState -> [TiState]
+eval state = state:restStates where
+    restStates | tiFinal state = []
+               | otherwise = eval nextState
+    nextState = doAdmin $ step state
 
 main :: IO ()
 main = do
@@ -57,6 +74,8 @@ main = do
 
     -- id x = x
     -- main = twice twice id 3
+    --
+    -- > 3
     T.putStrLn $ showResults $ eval $ compile
         [ ("id", ["x"], EVar "x")
         , ("main", [], EAp
@@ -68,10 +87,14 @@ main = do
         ]
 
     -- main = negate 3
+    --
+    -- > -3
     T.putStrLn $ showResults $ eval $ compile
         [("main", [], EAp (EVar "negate") (ENum 3))]
 
     -- main = twice negate 3
+    --
+    -- > 3
     T.putStrLn $ showResults $ eval $ compile
         [("main", [], EAp
                           (EAp
@@ -81,12 +104,16 @@ main = do
         ]
 
     -- main = negate (I 3)
+    --
+    -- > -3
     T.putStrLn $ showResults $ eval $ compile
         [("main", [], EAp (EVar "negate")
                           (EAp (EVar "I") (ENum 3)))
         ]
 
     -- main = 1 + 2
+    --
+    -- > 3
     T.putStrLn $ showResults $ eval $ compile
         [("main", [], EAp (EAp (EVar "+")
                                (ENum 1))
@@ -94,6 +121,8 @@ main = do
         ]
 
     -- main = 1 - 2
+    --
+    -- > -1
     T.putStrLn $ showResults $ eval $ compile
         [("main", [], EAp (EAp (EVar "-")
                                (ENum 1))
@@ -101,6 +130,8 @@ main = do
         ]
 
     -- main = 1 * 2
+    --
+    -- > 2
     T.putStrLn $ showResults $ eval $ compile
         [("main", [], EAp (EAp (EVar "*")
                                (ENum 1))
@@ -108,6 +139,8 @@ main = do
         ]
 
     -- main = 1 / 2
+    --
+    -- > 0
     T.putStrLn $ showResults $ eval $ compile
         [("main", [], EAp (EAp (EVar "/")
                                (ENum 1))
@@ -115,6 +148,8 @@ main = do
         ]
 
     -- main = if False 1 2
+    --
+    -- > 2
     T.putStrLn $ showResults $ eval $ compile
         [("main", [], EAp (EAp (EAp (EVar "if")
                                     (EVar "False"))
@@ -124,6 +159,8 @@ main = do
 
     -- fac n = if (n == 0) 1 (n * fac (n-1))
     -- main = fac 3
+    --
+    -- > 6
     T.putStrLn $ showResults $ eval $ compile
         [("fac", ["n"], EAp (EAp (EAp (EVar "if")
                                       (EAp (EAp (EVar "==")
@@ -143,8 +180,8 @@ main = do
     --                              (MkPair 2
     --                                      3))
     --                              4)))
-    T.putStrLn $ showResults $ eval $ compile
-        [("main", [], EAp (EVar "fst")
+    -- T.putStrLn $ showResults $ eval $ compile
+    let x = compile [("main", [], EAp (EVar "fst")
                           (EAp (EVar "snd")
                                (EAp (EVar "fst")
                                     (EAp (EAp (EVar "MkPair")
@@ -153,8 +190,14 @@ main = do
                                                    (EAp (EAp (EVar "MkPair")
                                                              (ENum 2))
                                                         (ENum 3))))
-                                         (ENum 4)))))
-        ]
+                                         (ENum 4))))) ]
+
+    T.putStrLn $ toStrict . displayT . renderPretty 0.9 80 $ showHeap (_heap x)
+    let e = eval x
+    forM_ e $ \state -> do
+        T.putStrLn $ toStrict . displayT . renderPretty 0.9 80 $ showState state
+        T.putStrLn $ toStrict . displayT . renderPretty 0.9 80 $ showHeap (state^.heap)
+    T.putStrLn $ showResults e
 
     -- main = 1 + fst (MkPair 1 0)
     T.putStrLn $ showResults $ eval $ compile

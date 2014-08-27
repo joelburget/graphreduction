@@ -12,8 +12,11 @@ data Heap a = Heap
     { _size   :: Int
     , _unused :: [Int]
     , _map    :: IntMap a
-    } deriving (Show)
+    }
 makeLenses ''Heap
+
+instance Show a => Show (Heap a) where
+    show heap = "Heap { size = " ++ show (heap^.size) ++ ", map = " ++ show (heap^.map) ++ "}"
 
 type Addr = Int
 
