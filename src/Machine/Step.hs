@@ -1,18 +1,18 @@
-module Step where
+module Machine.Step where
 
 import Control.Lens
 import qualified Data.HashMap.Lazy as H
 
-import GraphReduction
-import Instantiate
-import qualified Utils as U
-import Utils (Addr, Heap)
+import Machine.GraphReduction
+import Machine.Instantiate
+import qualified Machine.Utils as U
+import Machine.Utils (Addr)
 
 -- TODO use prism?
 isDataNode :: Node -> Bool
-isDataNode (NNum n)    = True
+isDataNode (NNum _)    = True
 isDataNode (NData _ _) = True
-isDataNode node = False
+isDataNode _ = False
 
 getargs :: TiHeap -> TiStack -> [Addr]
 getargs heap (sc:stack) = map getArg stack where
@@ -198,8 +198,11 @@ primConstr state tag arity
           -- Get the addr of a component from the address where it's applied
           -- TODO - this is ill-conceived
           componentAddrs = getargs heap' stack'
-          updAddr = last stack'
-          newHeap = U.update updAddr (NData tag componentAddrs) heap'
+          componentAddrs' = take arity componentAddrs
+          updAddr = stack' ^?! ix arity
+          -- updAddr = last stack'
+          newHeap = U.update updAddr (NData tag componentAddrs') heap'
+
           -- (newHeap, dataAddr) = U.alloc (NData tag componentAddrs) (state^.heap)
           -- (newHeap, dataAddr) = instantiate constr (state^.heap)
 
@@ -247,11 +250,3 @@ scStep state _ argNames body = state & stack .~ newStack
     env = H.union (H.fromList argBindings) (state^.globals)
     bodyAddr = head newStack
     newHeap = instantiateAndUpdate body bodyAddr heap' env
-
-tiFinal :: TiState -> Bool
-tiFinal state = case state^.stack of
-    [] -> True
-    [soleAddr] -> dataNode && emptyDump
-        where dataNode = isDataNode $ U.lookup soleAddr (state^.heap)
-              emptyDump = null $ state^.dump
-    _ -> False

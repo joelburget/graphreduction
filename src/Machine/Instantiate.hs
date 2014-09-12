@@ -1,12 +1,12 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Instantiate where
+module Machine.Instantiate where
 
 import qualified Data.HashMap.Lazy as H
 import Data.List (foldl')
 
-import GraphReduction
-import qualified Utils as U
-import Utils (Addr, Heap)
+import Machine.GraphReduction
+import qualified Machine.Utils as U
+import Machine.Utils (Addr)
 
 {-
  - Instantiate the given supercombinator body, writing over the given
@@ -90,6 +90,12 @@ instantiateConstr tag arity heap _ = U.alloc
  - addresses of the newly constructed instances. Then instantiate the body
  - of the let with the augmented environment.
  -}
+instantiateLet :: IsRec
+               -> [(Name, CoreExpr)]
+               -> CoreExpr
+               -> TiHeap
+               -> H.HashMap Name Addr
+               -> (TiHeap, Addr)
 instantiateLet isrec defs body heap env = result where
     (resultHeap, resultEnv) = foldl' (\(heap', env') (a, expr) ->
         let thisEnv = case isrec of

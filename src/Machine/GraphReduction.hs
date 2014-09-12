@@ -2,21 +2,17 @@
 {-# LANGUAGE TemplateHaskell #-}
 -- Implementing Functional Languages: a tutorial
 -- Template Instantiation language
-module GraphReduction where
+module Machine.GraphReduction where
 
 import Control.Lens
-import Data.IntSet (IntSet)
-import qualified Data.IntSet as IntSet
 import qualified Data.HashMap.Lazy as H
-import Data.List (intersperse, mapAccumL, foldl', find)
-import Data.Maybe (fromMaybe)
+import Data.List (mapAccumL)
 import Data.Text hiding (length, intersperse, last, map, head, zip, drop,
                         mapAccumL, foldl', tail, null, concat, foldl, foldl1,
                         dropWhile, find)
-import Prelude hiding (intersperse)
 
-import qualified Utils as U
-import Utils (Addr, Heap)
+import qualified Machine.Utils as U
+import Machine.Utils (Addr, Heap)
 
 data Expr a
     = EVar Name             -- ^ variable
@@ -29,26 +25,108 @@ data Expr a
         (Expr a)            -- body
     | ECase                 -- ^ Case expression
         (Expr a)            -- expression to scrutinize
-        [Alter a]           -- alternatives
+        [CaseAlt a]           -- alternatives
     | ELam [a] (Expr a)     -- ^ Lambda abstraction
-    deriving (Show)
+    deriving (Show, Eq)
 
 type CoreExpr = Expr Name
 type Name = Text
 
 -- | Is this let recursive?
-data IsRec = Recursive | NonRecursive deriving (Show)
+data IsRec = Recursive | NonRecursive deriving (Show, Eq)
 
 -- | Alternative - containing a tag, list of bound variables, and
 -- expression to the right of the arrow
-type Alter a = (Int, [a], Expr a)
-type CoreAlt = Alter Name
+type CaseAlt a = (Int, [a], Expr a)
+type CoreCaseAlt = CaseAlt Name
 
 type ScDefn a = (Name, [a], Expr a)
 type CoreScDefn = ScDefn Name
 
 type Program a = [ScDefn a]
 type CoreProgram = Program Name
+
+data MarkState = Done       -- ^ Finished garbage collecting
+               | Visits Int -- ^ Visited n times this garbage collection
+               deriving (Show, Eq)
+
+data Node
+    = NAp Addr Addr                   -- ^ Application
+    | NSupercomb Name [Name] CoreExpr -- ^ Supercombinator
+    | NNum Int                        -- ^ Number
+    | NInd Addr                       -- ^ Indirection
+    | NPrim Name Primitive            -- ^ Primitive
+    | NData Int [Addr]                -- ^ Tag, list of components
+    | NMarked MarkState Node          -- ^ Marked node
+    deriving (Show, Eq)
+
+type TiHeap = Heap Node
+
+data Primitive
+    = Neg
+    | Add
+    | Sub
+    | Mul
+    | Div
+    | PrimConstr Int Int
+    | If
+    | Greater
+    | GreaterEq
+    | Less
+    | LessEq
+    | Eq
+    | NotEq
+    | CasePair
+    | Abort
+    | CaseList
+    | Print
+    | Stop
+    deriving (Show, Eq)
+
+-- The spine stack is a stack of heap addresses
+type TiStack = [Addr]
+
+type TiDump = [TiStack]
+initialTidump :: TiDump
+initialTidump = []
+
+type TiOutput = [Int]
+type TiStats = Int
+type TiGlobals = H.HashMap Name Addr
+
+data TiState = TiState
+    { _output  :: TiOutput
+    , _stack   :: TiStack
+    , _dump    :: TiDump
+    , _heap    :: TiHeap
+    , _globals :: TiGlobals
+    , _stats   :: TiStats
+    } deriving (Show)
+makeLenses ''TiState
+
+data PreludeAndPrims = PreludeAndPrims
+    { prelude :: CoreProgram
+    , prims :: [(Name, Primitive)]
+    }
+
+tiStatInitial :: TiStats
+tiStatInitial = 0
+
+-- primitives :: H.HashMap Name Primitive
+primitives :: [(Name, Primitive)]
+primitives =
+    [ ("negate", Neg)
+    , ("+", Add), ("-", Sub)
+    , ("*", Mul), ("/", Div)
+    , ("if", If)
+    , (">", Greater), (">=", GreaterEq)
+    , ("<", Less), ("<=", LessEq)
+    , ("==", Eq), ("!=", NotEq)
+    , ("casePair", CasePair)
+    , ("abort", Abort)
+    , ("caseList", CaseList)
+    , ("print", Print), ("stop", Stop)
+    ]
 
 preludeDefs :: CoreProgram
 preludeDefs =
@@ -89,108 +167,10 @@ preludeDefs =
                                          (EVar "t")))
     ]
 
-data MarkState = Done       -- ^ Finished garbage collecting
-               | Visits Int -- ^ Visited n times this garbage collection
-               deriving Show
-
-data Node
-    = NAp Addr Addr                   -- ^ Application
-    | NSupercomb Name [Name] CoreExpr -- ^ Supercombinator
-    | NNum Int                        -- ^ Number
-    | NInd Addr                       -- ^ Indirection
-    | NPrim Name Primitive            -- ^ Primitive
-    | NData Int [Addr]                -- ^ Tag, list of components
-    | NMarked MarkState Node          -- ^ Marked node
-    deriving (Show)
-
-type TiHeap = Heap Node
-
-data Primitive
-    = Neg
-    | Add
-    | Sub
-    | Mul
-    | Div
-    | PrimConstr Int Int
-    | If
-    | Greater
-    | GreaterEq
-    | Less
-    | LessEq
-    | Eq
-    | NotEq
-    | CasePair
-    | Abort
-    | CaseList
-    | Print
-    | Stop
-    deriving (Show)
-
--- The spine stack is a stack of heap addresses
-type TiStack = [Addr]
-
-type TiDump = [TiStack]
-initialTidump = []
-
-type TiOutput = [Int]
-type TiStats = Int
-type TiGlobals = H.HashMap Name Addr
-
-data TiState = TiState
-    { _output  :: TiOutput
-    , _stack   :: TiStack
-    , _dump    :: TiDump
-    , _heap    :: TiHeap
-    , _globals :: TiGlobals
-    , _stats   :: TiStats
-    } deriving (Show)
-makeLenses ''TiState
-
--- primitives :: H.HashMap Name Primitive
-primitives :: [(Name, Primitive)]
-primitives =
-    [ ("negate", Neg)
-    , ("+", Add), ("-", Sub)
-    , ("*", Mul), ("/", Div)
-    , ("if", If)
-    , (">", Greater), (">=", GreaterEq)
-    , ("<", Less), ("<=", LessEq)
-    , ("==", Eq), ("!=", NotEq)
-    , ("casePair", CasePair)
-    , ("abort", Abort)
-    , ("caseList", CaseList)
-    , ("print", Print), ("stop", Stop)
-    ]
-
-tiStatInitial :: TiStats
-tiStatInitial = 0
-
-tiStatIncSteps :: TiStats -> TiStats
-tiStatIncSteps = (+1)
-
-tiStatGetSteps :: TiStats -> Int
-tiStatGetSteps = id
-
-applyToStats :: (TiStats -> TiStats) -> TiState -> TiState
-applyToStats statsFun state = state & stats %~ statsFun
-
--- | create the initial state of the machine from the program
-compile :: CoreProgram -> TiState
-compile program =
-    TiState [] initialStack initialTidump initialHeap globals tiStatInitial
-    where
-        scDefs = preludeDefs ++ extraPreludeDefs ++ program
-        (initialHeap, globals) = buildInitialHeap scDefs
-
-        addressOfMain = fromMaybe (error "main is not defined") $ globals ^? ix "main"
-        initialStack = [addressOfMain]
-
-extraPreludeDefs = []
-
-buildInitialHeap :: [CoreScDefn] -> (TiHeap, TiGlobals)
-buildInitialHeap scDefs = (heap2, H.fromList $ scAddrs ++ primAddrs)
+buildInitialHeap :: [CoreScDefn] -> [(Name, Primitive)] -> (TiHeap, TiGlobals)
+buildInitialHeap scDefs prims = (heap2, H.fromList $ scAddrs ++ primAddrs)
     where (heap1, scAddrs)   = mapAccumL allocateSc U.initial scDefs
-          (heap2, primAddrs) = mapAccumL allocatePrim heap1 primitives
+          (heap2, primAddrs) = mapAccumL allocatePrim heap1 prims
 
 allocateSc :: TiHeap -> CoreScDefn -> (TiHeap, (Name, Addr))
 allocateSc heap (name, args, body) = (heap', (name, addr))

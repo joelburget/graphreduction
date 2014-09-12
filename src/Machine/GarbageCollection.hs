@@ -1,19 +1,27 @@
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE TemplateHaskell #-}
-module GarbageCollection where
+module Machine.GarbageCollection where
 
 import Control.Lens
 import Data.List (mapAccumL, find)
 
-import GraphReduction
-import qualified Utils as U
-import Utils (Addr, Heap)
+import Machine.GraphReduction
+import qualified Machine.Utils as U
+import Machine.Utils (Addr)
 
+-- debugging
+import qualified Data.Text as T
+import qualified Data.Text.IO as T
+import Text.PrettyPrint.Leijen.Text
+import Data.Text.Lazy (toStrict)
+import Machine.Pretty
+-- end debugging
 
 data MarkingMachine = MarkingMachine
     { _forwardP    :: Addr
     , _backwardP   :: Addr
     , _machineHeap :: TiHeap
+    -- , _stack       :: [Addr]
     } deriving (Show)
 makeLenses ''MarkingMachine
 
@@ -54,7 +62,7 @@ markFromGlobals state = state & globals .~ newGlobals
 -- done
 markFrom :: TiHeap -> Addr -> (TiHeap, Addr)
 markFrom heap addr = (finalMachine^.machineHeap, finalMachine^.forwardP) where
-    startMachine = MarkingMachine addr U.null heap
+    startMachine = MarkingMachine addr U.null heap -- []
     machines = iterate runMarkingMachine startMachine
     isFinal machine = (U.isnull $ machine^.backwardP) &&
         (isDone $ machine^.(pointsTo forwardP))
@@ -109,19 +117,23 @@ runMarkingMachine machine = case machine^.(pointsTo forwardP) of
     NInd a -> machine & forwardP .~ a
     where f = machine^.forwardP
           b = machine^.backwardP
+
           dispatchReturnVisit (NMarked (Visits 1) (NAp b' a2)) =
               machine & nodeAt backwardP .~ NMarked (Visits 2) (NAp f b')
                       & forwardP         .~ a2
+
           dispatchReturnVisit (NMarked (Visits 2) (NAp a1 b')) =
               machine & nodeAt backwardP .~ NMarked Done (NAp a1 f)
                       & forwardP         .~ b
                       & backwardP        .~ b'
+
           dispatchReturnVisit (NMarked (Visits n) (NData tag components))
               | n < length components
               = let newComponents = components
                         & ix (n-1) .~ (machine^.forwardP)
-                        & ix n     .~ (machine^.backwardP)
+                        & ix n     .~ reservedBack
                     newForward = components^?!ix n
+                    reservedBack = components^?!ix (n-1)
                 in machine & nodeAt backwardP .~
                              NMarked (Visits (n+1)) (NData tag newComponents)
                            & forwardP .~ newForward
@@ -132,7 +144,9 @@ runMarkingMachine machine = case machine^.(pointsTo forwardP) of
                                 NMarked Done (NData tag newComponents)
                            & forwardP         .~ b
                            & backwardP        .~ (last components)
-          dispatchReturnVisit x = error (show x ++ show machine)
+
+          dispatchReturnVisit x = error $ T.unpack $
+              toStrict . displayT . renderPretty 0.9 80 $ showHeap (machine^.machineHeap)
 
 
 scanHeap :: TiState -> TiState

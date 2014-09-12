@@ -5,23 +5,11 @@ import Control.Lens
 import Control.Monad
 import qualified Data.Text.IO as T
 
-import Text.PrettyPrint.Leijen.Text
-import Data.Text.Lazy (toStrict)
-import Data.Text (pack)
-
-import GarbageCollection
-import GraphReduction
-import Pretty
-import Step
-
-doAdmin :: TiState -> TiState
-doAdmin = gc . applyToStats tiStatIncSteps
-
-eval :: TiState -> [TiState]
-eval state = state:restStates where
-    restStates | tiFinal state = []
-               | otherwise = eval nextState
-    nextState = doAdmin $ step state
+import Machine.GarbageCollection
+import Machine.GraphReduction
+import Machine.Pretty
+import Machine.Run
+import Machine.Step
 
 main :: IO ()
 main = do
@@ -180,8 +168,9 @@ main = do
     --                              (MkPair 2
     --                                      3))
     --                              4)))
-    -- T.putStrLn $ showResults $ eval $ compile
-    let x = compile [("main", [], EAp (EVar "fst")
+    --
+    -- > 2
+    T.putStrLn $ showResults $ eval $ compile [("main", [], EAp (EVar "fst")
                           (EAp (EVar "snd")
                                (EAp (EVar "fst")
                                     (EAp (EAp (EVar "MkPair")
@@ -191,13 +180,6 @@ main = do
                                                              (ENum 2))
                                                         (ENum 3))))
                                          (ENum 4))))) ]
-
-    T.putStrLn $ toStrict . displayT . renderPretty 0.9 80 $ showHeap (_heap x)
-    let e = eval x
-    forM_ e $ \state -> do
-        T.putStrLn $ toStrict . displayT . renderPretty 0.9 80 $ showState state
-        T.putStrLn $ toStrict . displayT . renderPretty 0.9 80 $ showHeap (state^.heap)
-    T.putStrLn $ showResults e
 
     -- main = 1 + fst (MkPair 1 0)
     T.putStrLn $ showResults $ eval $ compile

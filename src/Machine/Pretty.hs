@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Pretty where
+module Machine.Pretty where
 
 import Control.Lens
 import qualified Data.IntMap.Lazy as M
@@ -9,9 +9,9 @@ import Data.Text hiding (length, intersperse, last, map, head, zip, drop,
 import Text.PrettyPrint.Leijen.Text
 import Data.Text.Lazy (fromStrict, toStrict)
 
-import GraphReduction
-import qualified Utils as U
-import Utils (Addr, Heap)
+import Machine.GraphReduction
+import qualified Machine.Utils as U
+import Machine.Utils (Addr)
 
 showResults :: [TiState] -> Text
 showResults states = toStrict . displayT . renderPretty 0.9 80 $
@@ -20,10 +20,13 @@ showResults states = toStrict . displayT . renderPretty 0.9 80 $
 showState :: TiState -> Doc
 showState state = showStack (state^.heap) (state^.stack) <> line
 
+tShow :: Show a => a -> Doc
+tShow = text . fromStrict . pack . show
+
 showHeap :: TiHeap -> Doc
 showHeap heap = vcat
     [ text " Heap ["
-    , nest 2 $ vsep $ map (text . fromStrict . pack . show) $ M.toList (heap^.U.map)
+    , nest 2 $ vsep $ map tShow $ M.toList (heap^.U.map)
     , text " ]"
     ]
 
@@ -52,7 +55,7 @@ showStkNode heap (NAp funAddr argAddr) = hcat
     , showNode $ heap^.to (U.lookup argAddr)
     , text ")"
     ]
-showStkNode heap node = showNode node
+showStkNode _ node = showNode node
 
 showNode :: Node -> Doc
 showNode (NAp a1 a2) = hcat
@@ -61,20 +64,22 @@ showNode (NAp a1 a2) = hcat
     , text " "
     , showAddr a2
     ]
-showNode (NSupercomb name args body) = text $ fromStrict $ "NSupercomb " `append` name
+showNode (NSupercomb name _ _) = text $ fromStrict $ "NSupercomb " `append` name
 showNode (NNum n) = text "NNum " <> int n
 showNode (NInd p) = text "Indirection " <> int p
-showNode (NPrim name _) = "Prim " <> (text $ fromStrict name)
-showNode (NData tag components) = "NData " <> int tag
+showNode (NPrim name prim) = "Prim " <> (text $ fromStrict name) <> " (" <> tShow prim <> ")"
+showNode (NData tag _) = "NData " <> int tag
 
 showAddr :: Addr -> Doc
-showAddr addr = int addr
-showFWAddr addr = indent (4 - (length $ show addr)) $ int addr where
+showAddr = int
+
+showFWAddr :: Addr -> Doc
+showFWAddr addr = indent (4 - (length $ show addr)) $ int addr
 
 showStats :: TiState -> Doc
 showStats state = hcat
     [ line
     , text "Total number of steps = "
-    , int $ tiStatGetSteps $ state^.stats
+    , int $ state^.stats
     , line
     ]

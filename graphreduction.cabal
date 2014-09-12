@@ -15,7 +15,15 @@ build-type:          Simple
 cabal-version:       >=1.8
 
 library
-  exposed-modules: GraphReduction, Utils, Pretty, Instantiate, Step
+  hs-source-dirs: src
+  exposed-modules:
+    Machine.GraphReduction,
+    Machine.GarbageCollection,
+    Machine.Utils,
+    Machine.Pretty,
+    Machine.Instantiate,
+    Machine.Step
+    Machine.Run
   -- other-modules:
   build-depends:
     base == 4.7.*,
@@ -24,9 +32,12 @@ library
     containers >= 0.5,
     unordered-containers >= 0.2,
     lens >= 3.9
+
 executable main
+  hs-source-dirs: src
   main-is: Main.hs
   -- ghc-options: -prof -auto-all
+  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields
   build-depends:
     base == 4.7.*,
     text >= 0.11,
@@ -35,3 +46,27 @@ executable main
     unordered-containers >= 0.2,
     lens >= 3.9,
     graphreduction
+
+test-suite tests
+  type: exitcode-stdio-1.0
+  hs-source-dirs: tests
+  main-is: Tests.hs
+  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields
+  build-depends:
+    base == 4.7.*,
+    text >= 0.11,
+    wl-pprint-text >= 1,
+    containers >= 0.5,
+    unordered-containers >= 0.2,
+    lens >= 3.9,
+    graphreduction,
+
+    HUnit,
+    QuickCheck >= 2.7,
+    test-framework,
+    test-framework-hunit,
+    test-framework-quickcheck2
+
+source-repository head
+  type: git
+  location: https://github.com/joelburget/graphreduction
