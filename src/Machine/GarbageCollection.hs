@@ -9,19 +9,13 @@ import Machine.GraphReduction
 import qualified Machine.Utils as U
 import Machine.Utils (Addr)
 
--- debugging
 import qualified Data.Text as T
-import qualified Data.Text.IO as T
-import Text.PrettyPrint.Leijen.Text
-import Data.Text.Lazy (toStrict)
 import Machine.Pretty
--- end debugging
 
 data MarkingMachine = MarkingMachine
     { _forwardP    :: Addr
     , _backwardP   :: Addr
     , _machineHeap :: TiHeap
-    -- , _stack       :: [Addr]
     } deriving (Show)
 makeLenses ''MarkingMachine
 
@@ -62,7 +56,7 @@ markFromGlobals state = state & globals .~ newGlobals
 -- done
 markFrom :: TiHeap -> Addr -> (TiHeap, Addr)
 markFrom heap addr = (finalMachine^.machineHeap, finalMachine^.forwardP) where
-    startMachine = MarkingMachine addr U.null heap -- []
+    startMachine = MarkingMachine addr U.null heap
     machines = iterate runMarkingMachine startMachine
     isFinal machine = (U.isnull $ machine^.backwardP) &&
         (isDone $ machine^.(pointsTo forwardP))
@@ -145,8 +139,8 @@ runMarkingMachine machine = case machine^.(pointsTo forwardP) of
                            & forwardP         .~ b
                            & backwardP        .~ (last components)
 
-          dispatchReturnVisit x = error $ T.unpack $
-              toStrict . displayT . renderPretty 0.9 80 $ showHeap (machine^.machineHeap)
+          dispatchReturnVisit x = error $ T.unpack $ textify $ showHeap $
+              machine^.machineHeap
 
 
 scanHeap :: TiState -> TiState

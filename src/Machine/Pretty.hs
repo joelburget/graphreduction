@@ -13,8 +13,11 @@ import Machine.GraphReduction
 import qualified Machine.Utils as U
 import Machine.Utils (Addr)
 
+textify :: Doc -> Text
+textify = toStrict . displayT . renderPretty 0.9 80
+
 showResults :: [TiState] -> Text
-showResults states = toStrict . displayT . renderPretty 0.9 80 $
+showResults states = textify $
     vsep [hsep $ map showState states, showStats $ last states]
 
 showState :: TiState -> Doc

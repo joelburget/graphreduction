@@ -25,16 +25,15 @@ import qualified Machine.Utils as U
 import Machine.Utils (size)
 
 
-
-
-
 main :: IO ()
 main = defaultMain tests
+
 
 tests :: [Test]
 tests =
   [ testGroup "gc" gcTests
   ]
+
 
 gcTests :: [Test]
 gcTests =
@@ -42,6 +41,7 @@ gcTests =
   , testCase "trouble_results" test_trouble_results
   , testCase "machine_steps" test_machine_steps
   ]
+
 
 troubleDefs :: PreludeAndPrims
 troubleDefs = PreludeAndPrims
@@ -52,6 +52,7 @@ troubleDefs = PreludeAndPrims
     , ("K1", ["x", "y"], EVar "y")
     ]
     [ ("casePair", CasePair) ]
+
 
 trouble :: TiState
 trouble = compileWith troubleDefs [("main", [],
@@ -67,8 +68,10 @@ trouble = compileWith troubleDefs [("main", [],
                        (ENum 4))))
     )]
 
+
 test_trouble_compile :: Assertion
 test_trouble_compile = (trouble^.heap^.size) @?= 7
+
 
 test_trouble_results :: Assertion
 test_trouble_results = do
@@ -80,6 +83,7 @@ test_trouble_results = do
 
     let node = U.lookup (head stack') heap'
     assertEqual "correct answer" node (NNum 2)
+
 
 test_machine_steps :: Assertion
 test_machine_steps = do
