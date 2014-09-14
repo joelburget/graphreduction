@@ -13,7 +13,7 @@ compileWith :: PreludeAndPrims -> CoreProgram -> TiState
 compileWith defs program =
     TiState [] initialStack initialTidump initialHeap globals tiStatInitial
     where
-        scDefs = (prelude defs) ++ program
+        scDefs = prelude defs ++ program
         (initialHeap, globals) = buildInitialHeap scDefs (prims defs)
 
         addressOfMain = fromMaybe (error "main is not defined") $
