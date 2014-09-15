@@ -42,12 +42,11 @@ free a (Heap size free cts) = (Heap (size - 1) (a:free) (delete a cts))
 
 -- | Return the object associated with the address
 lookup :: Addr -> Heap a -> a
-lookup a heap = aLookup (heap^.map) a $
-    error $ "can't find node " ++ show a ++ " in heap"
+lookup a heap = lookup' (heap^.map) a err
+    where err = error $ "can't find node " ++ show a ++ " in heap"
 
--- | Lookup list key default
-aLookup :: IntMap a -> Addr -> a -> a
-aLookup heap a def = maybe def id (M.lookup a heap)
+          lookup' :: IntMap a -> Addr -> a -> a
+          lookup' heap a def = maybe def id (M.lookup a heap)
 
 -- | The addresses of all the objects in the heap
 addresses :: Heap a -> [Addr]
