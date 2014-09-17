@@ -3,7 +3,6 @@ module Machine.Internal.Heap where
 
 import Control.Lens
 import Data.IntMap.Lazy as M hiding (size, map)
-import Data.List (mapAccumL)
 import Prelude hiding (lookup, map)
 
 -- | The number of objects in the heap, list of unused addresses, map from
