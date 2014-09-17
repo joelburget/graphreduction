@@ -110,10 +110,13 @@ tiStatInitial = 0
 
 
 buildInitialHeap :: [CoreScDefn] -> [(Name, Primitive)] -> (TiHeap, TiGlobals)
-buildInitialHeap scDefs prims = (heap2, H.fromList $ scAddrs ++ primAddrs)
+buildInitialHeap scDefs prims = (heap2, H.fromList (scAddrs ++ primAddrs))
     where (heap1, scAddrs)   = mapAccumL allocateSc U.initial scDefs
           (heap2, primAddrs) = mapAccumL allocatePrim heap1 prims
 
+-- allocateSc and allocatePrim have this weird signature (in the return
+-- type) because they're folded with mapAccumL. We fold the heap - building
+-- it up as we allocate, and accumulate a list of name-address mappings.
 allocateSc :: TiHeap -> CoreScDefn -> (TiHeap, (Name, Addr))
 allocateSc heap (name, args, body) = (heap', (name, addr))
     where (heap', addr) = U.alloc (NSupercomb name args body) heap
