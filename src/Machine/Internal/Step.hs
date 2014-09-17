@@ -44,12 +44,13 @@ primArith state f = primDyadic state (\(NNum x) (NNum y) -> (NNum (f x y)))
 
 primComp :: State -> (Int -> Int -> Bool) -> State
 primComp state f = primDyadic state $ \(NNum x) (NNum y) ->
-    (NData (if (f x y) then 2 else 1) [])
+    -- TODO remove all this magical NData 1/2 stuff!
+    NData (if f x y then 2 else 1) []
 
 primDyadic :: State -> (Node -> Node -> Node) -> State
 primDyadic state f
-    | length stack' > 3 = error $ "More than two arguments to dyadic prim"
-    | length stack' < 3 = error $ "Less than two arguments to dyadic prim"
+    | length stack' > 3 = error "More than two arguments to dyadic prim"
+    | length stack' < 3 = error "Less than two arguments to dyadic prim"
     | not (isDataNode m) = state & stack .~ [arg1Addr]
                                  & dump  %~ ([rootNode]:)
     | not (isDataNode n) = state & stack .~ [arg2Addr]
@@ -67,8 +68,8 @@ primDyadic state f
 
 primNeg :: State -> State
 primNeg state
-    | length stack' > 2 = error $ "More than one argument to neg"
-    | length stack' < 2 = error $ "No arguments to neg"
+    | length stack' > 2 = error "More than one argument to neg"
+    | length stack' < 2 = error "No arguments to neg"
     | isDataNode arg = state & stack %~ tail
                              & heap  %~ U.update (stack' !! 1) (NNum (-n))
     | otherwise = state & stack .~ [argAddr]
@@ -91,8 +92,8 @@ followIndirection node        _    = node
 -- ==>
 primIf :: State -> State
 primIf state
-    | length stack' < 4 = error $ "Less than three arguments to if"
-    | length stack' > 4 = error $ "More than three arguments to if"
+    | length stack' < 4 = error "Less than three arguments to if"
+    | length stack' > 4 = error "More than three arguments to if"
     | isDataNode bool = state & stack .~ newStack
                               & heap  .~ newHeap
     | otherwise = state & stack .~ [boolAddr]
@@ -106,14 +107,14 @@ primIf state
 
           -- isDataNode case
           NData t _ = bool
-          branchAddr = if t == 1 then args !! 2 else args !! 1
+          branchAddr = args !! (if t == 1 then 2 else 1)
           newHeap = U.update (stack' !! 3) (NInd branchAddr) heap'
           newStack = drop 3 stack'
 
 primCasePair :: State -> State
 primCasePair state
-    | length stack' < 3 = error $ "Less than two arguments to casePair"
-    | length stack' > 3 = error $ "More than two arguments to casePair"
+    | length stack' < 3 = error "Less than two arguments to casePair"
+    | length stack' > 3 = error "More than two arguments to casePair"
     | isDataNode pair = state & stack .~ newStack
                               & heap  .~ newHeap
     | otherwise = state & stack .~ [pairAddr]
@@ -136,8 +137,8 @@ primCasePair state
 
 primCaseList :: State -> State
 primCaseList state
-    | length stack' < 4 = error $ "Less than three arguments to caseList"
-    | length stack' > 4 = error $ "More than three arguments to caseList"
+    | length stack' < 4 = error "Less than three arguments to caseList"
+    | length stack' > 4 = error "More than three arguments to caseList"
     | isDataNode lst = state & stack .~ newStack
                              & heap  .~ newHeap
     | otherwise = state & stack .~ [lstAddr]
@@ -190,8 +191,8 @@ primPrint state
 -- ==>           an:[] d h [ an:NData t [b1,...,bn]  ]   f
 primConstr :: State -> Int -> Int -> State
 primConstr state tag arity
-    | length stack' > (arity + 1) = error $ "Too many arguments to constructor"
-    | length stack' < (arity + 1) = error $ "Not enough arguments to constructor"
+    | length stack' > (arity + 1) = error "Too many arguments to constructor"
+    | length stack' < (arity + 1) = error "Not enough arguments to constructor"
     | otherwise = state & stack .~ [updAddr]
                         & heap  .~ newHeap
     where stack' = state^.stack

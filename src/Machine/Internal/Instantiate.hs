@@ -94,7 +94,7 @@ instantiateLet :: [(Name, CoreExpr)]
                -> (Heap, Addr)
 instantiateLet defs body heap env = result where
     (resultHeap, resultEnv) = foldl' (\(heap', env') (a, expr) ->
-        let (heap'', addr) = (instantiate expr heap' resultEnv)
+        let (heap'', addr) = instantiate expr heap' resultEnv
             env'' = H.insert a addr env'
         in (heap'', env'')) (heap, env) defs
     result = instantiate body resultHeap resultEnv

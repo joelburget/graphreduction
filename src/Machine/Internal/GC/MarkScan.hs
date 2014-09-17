@@ -57,8 +57,9 @@ markFrom :: Heap -> Addr -> (Heap, Addr)
 markFrom heap addr = (finalMachine^.machineHeap, finalMachine^.forwardP) where
     startMachine = MarkingMachine addr U.null heap
     machines = iterate runMarkingMachine startMachine
-    isFinal machine = (U.isnull $ machine^.backwardP) &&
-        (isDone $ machine^.(pointsTo forwardP))
+    isFinal machine =
+        U.isnull (machine^.backwardP) &&
+        isDone (machine^.pointsTo forwardP)
     Just finalMachine = find isFinal machines
 
     isDone :: Node -> Bool
@@ -80,7 +81,7 @@ nodeAt getter = sets $ \nodeMod machine ->
 
 
 runMarkingMachine :: MarkingMachine -> MarkingMachine
-runMarkingMachine machine = case machine^.(pointsTo forwardP) of
+runMarkingMachine machine = case machine^.pointsTo forwardP of
     NAp a1 a2 -> machine & backwardP       .~ f
                          & nodeAt forwardP .~
                              NMarked (Visits 1) (NAp b a2)
@@ -92,20 +93,20 @@ runMarkingMachine machine = case machine^.(pointsTo forwardP) of
 
     -- these are all the same
     node@(NData _ []) ->
-        machine & (nodeAt forwardP) .~ (NMarked Done node)
-    node@(NPrim _ _) ->
-        machine & (nodeAt forwardP) .~ (NMarked Done node)
-    node@(NSupercomb _ _ _) ->
-        machine & (nodeAt forwardP) .~ (NMarked Done node)
+        machine & nodeAt forwardP .~ NMarked Done node
+    node@(NPrim{}) ->
+        machine & nodeAt forwardP .~ NMarked Done node
+    node@(NSupercomb{}) ->
+        machine & nodeAt forwardP .~ NMarked Done node
     node@(NNum _) ->
-        machine & (nodeAt forwardP) .~ (NMarked Done node)
+        machine & nodeAt forwardP .~ NMarked Done node
 
     -- If we come across a node with some visits we're circularly seeing
     -- it. Back slowly away from the node...
     --
     -- If it's marked as done we're returning to it through sharing. We
     -- still don't need to do anything.
-    NMarked _ _ -> dispatchReturnVisit $ machine^.(pointsTo backwardP)
+    NMarked _ _ -> dispatchReturnVisit $ machine^.pointsTo backwardP
 
     NInd a -> machine & forwardP .~ a
     where f = machine^.forwardP
@@ -136,7 +137,7 @@ runMarkingMachine machine = case machine^.(pointsTo forwardP) of
                 in machine & nodeAt backwardP .~
                                 NMarked Done (NData tag newComponents)
                            & forwardP         .~ b
-                           & backwardP        .~ (last components)
+                           & backwardP        .~ last components
 
           dispatchReturnVisit x = error $ T.unpack $ textify $ showHeap $
               machine^.machineHeap

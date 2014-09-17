@@ -70,14 +70,14 @@ showNode (NAp a1 a2) = hcat
 showNode (NSupercomb name _ _) = text $ fromStrict $ "NSupercomb " `append` name
 showNode (NNum n) = text "NNum " <> int n
 showNode (NInd p) = text "Indirection " <> int p
-showNode (NPrim name prim) = "Prim " <> (text $ fromStrict name) <> " (" <> tShow prim <> ")"
+showNode (NPrim name prim) = "Prim " <> text (fromStrict name) <> " (" <> tShow prim <> ")"
 showNode (NData tag _) = "NData " <> int tag
 
 showAddr :: Addr -> Doc
 showAddr = int
 
 showFWAddr :: Addr -> Doc
-showFWAddr addr = indent (4 - (length $ show addr)) $ int addr
+showFWAddr addr = indent (4 - length (show addr)) $ int addr
 
 showStats :: State -> Doc
 showStats state = hcat

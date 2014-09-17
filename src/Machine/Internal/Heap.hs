@@ -3,6 +3,7 @@ module Machine.Internal.Heap where
 
 import Control.Lens
 import Data.IntMap.Lazy as M hiding (size, map)
+import Data.Maybe (fromMaybe)
 import Prelude hiding (lookup, map)
 
 -- | The number of objects in the heap, list of unused addresses, map from
@@ -33,19 +34,16 @@ alloc n (PolyHeap size (next:free) cts) =
 -- | Returns a new heap in which the address is now associated with the
 -- object
 update :: Addr -> a -> PolyHeap a -> PolyHeap a
-update a n (PolyHeap size free cts) = (PolyHeap size free (adjust (const n) a cts))
+update a n heap = heap & map %~ adjust (const n) a
 
 -- | Returns a new heap with the specified object removed
 free :: Addr -> PolyHeap a -> PolyHeap a
-free a (PolyHeap size free cts) = (PolyHeap (size - 1) (a:free) (delete a cts))
+free a (PolyHeap size free cts) = PolyHeap (size - 1) (a:free) (delete a cts)
 
 -- | Return the object associated with the address
 lookup :: Addr -> PolyHeap a -> a
-lookup a heap = lookup' (heap^.map) a err
+lookup a heap = fromMaybe err (M.lookup a (heap^.map))
     where err = error $ "can't find node " ++ show a ++ " in heap"
-
-          lookup' :: IntMap a -> Addr -> a -> a
-          lookup' heap a def = maybe def id (M.lookup a heap)
 
 -- | The addresses of all the objects in the heap
 addresses :: PolyHeap a -> [Addr]

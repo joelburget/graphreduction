@@ -1,19 +1,10 @@
-module Machine
-    ( module Machine.Internal.Data
-    , module Machine.Internal.Defs
-    , module Machine.Internal.GC.MarkScan
-    , module Machine.Internal.Heap
-    , module Machine.Internal.Instantiate
-    , module Machine.Internal.Pretty
-    , module Machine.Internal.Run
-    , module Machine.Internal.Step
-    ) where
+module Machine (module X) where
 
-import Machine.Internal.Data
-import Machine.Internal.Defs
-import Machine.Internal.GC.MarkScan
-import Machine.Internal.Heap
-import Machine.Internal.Instantiate
-import Machine.Internal.Pretty
-import Machine.Internal.Run
-import Machine.Internal.Step
+import Machine.Internal.Data as X
+import Machine.Internal.Defs as X
+import Machine.Internal.GC.MarkScan as X
+import Machine.Internal.Heap as X
+import Machine.Internal.Instantiate as X
+import Machine.Internal.Pretty as X
+import Machine.Internal.Run as X
+import Machine.Internal.Step as X
