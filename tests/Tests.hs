@@ -15,12 +15,12 @@ import qualified Machine as U
 import Machine (
     CoreProgram,
     Expr(..),
-    Heap(..),
+    PolyHeap(PolyHeap),
     MarkState(..),
     Node(..),
     PreludeAndPrims(..),
     Primitive(..),
-    TiState,
+    State,
 
     backwardP,
     compile,
@@ -87,7 +87,7 @@ troubleDefs = PreludeAndPrims
     [ ("casePair", CasePair) ]
 
 
-trouble :: TiState
+trouble :: State
 trouble = compileWith troubleDefs [("main", [],
     EAp (EVar "fst")
         (EAp (EVar "snd")
@@ -118,7 +118,7 @@ test_trouble_results = do
 
 test_machine_steps :: Assertion
 test_machine_steps = do
-    let heap' = Heap 3 [4..] $ M.fromList
+    let heap' = PolyHeap 3 [4..] $ M.fromList
             [ (1, NData 1 [2, 3])
             , (2, NNum 2)
             , (3, NNum 3)
@@ -160,7 +160,7 @@ test_machine_steps = do
         (Just $ NMarked Done (NData 1 [2, 3]))
 
 
-extractResult :: [TiState] -> Node
+extractResult :: [State] -> Node
 extractResult states =
     let finalState = last states
         finalStack = finalState^.stack

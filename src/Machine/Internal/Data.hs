@@ -11,7 +11,7 @@ import Data.Text hiding (length, intersperse, last, map, head, zip, drop,
                         dropWhile, find)
 
 import qualified Machine.Internal.Heap as U
-import Machine.Internal.Heap (Addr, Heap)
+import Machine.Internal.Heap (Addr, PolyHeap)
 
 
 data Expr a
@@ -56,7 +56,7 @@ data Node
     | NMarked MarkState Node          -- ^ Marked node
     deriving (Show, Eq)
 
-type Heap = Heap Node
+type Heap = PolyHeap Node
 
 data Primitive
     = Neg
