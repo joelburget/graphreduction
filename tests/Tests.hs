@@ -16,7 +16,6 @@ import Machine (
     CoreProgram,
     Expr(..),
     Heap(..),
-    IsRec(..),
     MarkState(..),
     Node(..),
     PreludeAndPrims(..),
@@ -198,7 +197,7 @@ exec_example_3 = do
     -- main = let x = 3; y = I in y x
     -- > 3
     let x = getFinalNode [("main", [],
-            ELet NonRecursive [("x", ENum 3), ("y", EVar "I")]
+            ELet [("x", ENum 3), ("y", EVar "I")]
                 (EAp (EVar "y") (EVar "x")))]
     x @?= NNum 3
 
@@ -221,7 +220,7 @@ exec_example_4 = do
             , ("pair", ["x", "y", "f"], EAp (EAp (EVar "f") (EVar "x")) (EVar "y"))
             , ("fst", ["p"], EAp (EVar "p") (EVar "K"))
             , ("snd", ["p"], EAp (EVar "p") (EVar "K1"))
-            , ("f", ["x", "y"], ELet Recursive
+            , ("f", ["x", "y"], ELet
                   [ ("a", EAp (EAp (EVar "pair") (EVar "x")) (EVar "b"))
                   , ("b", EAp (EAp (EVar "pair") (EVar "y")) (EVar "a"))
                   ]

@@ -20,7 +20,6 @@ data Expr a
     | EConstr Int Int       -- ^ Constructor tag arity
     | EAp (Expr a) (Expr a) -- ^ application
     | ELet                  -- ^ Let(rec) expression
-        IsRec               -- body with True = recursive
         [(a, Expr a)]       -- definitions
         (Expr a)            -- body
     | ECase                 -- ^ Case expression
@@ -31,9 +30,6 @@ data Expr a
 
 type CoreExpr = Expr Name
 type Name = Text
-
--- | Is this let recursive?
-data IsRec = Recursive | NonRecursive deriving (Show, Eq)
 
 -- | Alternative - containing a tag, list of bound variables, and
 -- expression to the right of the arrow

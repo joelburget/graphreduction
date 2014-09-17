@@ -30,8 +30,8 @@ instantiateAndUpdate ev@(EVar v) updAddr heap env =
     U.update updAddr (NInd $ H.lookupDefault (error $ "Undefined name " ++ show v) v env) heap
 instantiateAndUpdate (EConstr tag arity) updAddr heap env =
     instantiateAndUpdateConstr tag arity updAddr heap env
-instantiateAndUpdate (ELet isrec defs body) updAddr heap env =
-    instantiateAndUpdateLet isrec defs body updAddr heap env
+instantiateAndUpdate (ELet defs body) updAddr heap env =
+    instantiateAndUpdateLet defs body updAddr heap env
 instantiateAndUpdate (ECase e alts) updAddr heap env = error "Not yet!"
 
 instantiateAndUpdateConstr :: Int
@@ -49,19 +49,15 @@ instantiateAndUpdateConstr tag arity updAddr heap env = U.update updAddr
  - addresses of the newly constructed instances. Then instantiate the body
  - of the let with the augmented environment.
  -}
-instantiateAndUpdateLet :: IsRec
-                        -> [(Name, CoreExpr)]
+instantiateAndUpdateLet :: [(Name, CoreExpr)]
                         -> CoreExpr
                         -> Addr
                         -> TiHeap
                         -> TiGlobals
                         -> TiHeap
-instantiateAndUpdateLet isrec defs body updAddr heap env = result where
+instantiateAndUpdateLet defs body updAddr heap env = result where
     (resultHeap, resultEnv) = foldl' (\(heap', env') (a, expr) ->
-        let thisEnv = case isrec of
-                Recursive -> resultEnv
-                NonRecursive -> env'
-            (heap'', addr) = (instantiate expr heap' thisEnv)
+        let (heap'', addr) = instantiate expr heap' resultEnv
             env'' = H.insert a addr env'
         in (heap'', env'')) (heap, env) defs
     result = instantiateAndUpdate body updAddr resultHeap resultEnv
@@ -78,8 +74,8 @@ instantiate (EAp e1 e2) heap env = U.alloc (NAp a1 a2) heap2 where
 instantiate (EVar v) heap env =
     (heap, H.lookupDefault (error $ "Undefined name " ++ show v) v env)
 instantiate (EConstr tag arity) heap env = instantiateConstr tag arity heap env
-instantiate (ELet isrec defs body) heap env =
-    instantiateLet isrec defs body heap env
+instantiate (ELet defs body) heap env =
+    instantiateLet defs body heap env
 instantiate (ECase e alts) heap env = error "Can't instantiate case exprs"
 
 instantiateConstr tag arity heap _ = U.alloc
@@ -91,18 +87,14 @@ instantiateConstr tag arity heap _ = U.alloc
  - addresses of the newly constructed instances. Then instantiate the body
  - of the let with the augmented environment.
  -}
-instantiateLet :: IsRec
-               -> [(Name, CoreExpr)]
+instantiateLet :: [(Name, CoreExpr)]
                -> CoreExpr
                -> TiHeap
                -> H.HashMap Name Addr
                -> (TiHeap, Addr)
-instantiateLet isrec defs body heap env = result where
+instantiateLet defs body heap env = result where
     (resultHeap, resultEnv) = foldl' (\(heap', env') (a, expr) ->
-        let thisEnv = case isrec of
-                Recursive -> resultEnv
-                NonRecursive -> env'
-            (heap'', addr) = (instantiate expr heap' thisEnv)
+        let (heap'', addr) = (instantiate expr heap' resultEnv)
             env'' = H.insert a addr env'
         in (heap'', env'')) (heap, env) defs
     result = instantiate body resultHeap resultEnv
