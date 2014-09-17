@@ -16,24 +16,24 @@ import Machine.Internal.Heap (Addr)
 textify :: Doc -> Text
 textify = toStrict . displayT . renderPretty 0.9 80
 
-showResults :: [TiState] -> Text
+showResults :: [State] -> Text
 showResults states = textify $
     vsep [hsep $ map showState states, showStats $ last states]
 
-showState :: TiState -> Doc
+showState :: State -> Doc
 showState state = showStack (state^.heap) (state^.stack) <> line
 
 tShow :: Show a => a -> Doc
 tShow = text . fromStrict . pack . show
 
-showHeap :: TiHeap -> Doc
+showHeap :: Heap -> Doc
 showHeap heap = vcat
     [ text " Heap ["
     , nest 2 $ vsep $ map tShow $ M.toList (heap^.U.map)
     , text " ]"
     ]
 
-showStack :: TiHeap -> TiStack -> Doc
+showStack :: Heap -> Stack -> Doc
 showStack heap stack = hcat
     [ text "Stk ["
     , line
@@ -48,7 +48,7 @@ showStack heap stack = hcat
             , showStkNode heap $ U.lookup addr heap
             ]
 
-showStkNode :: TiHeap -> Node -> Doc
+showStkNode :: Heap -> Node -> Doc
 showStkNode heap (NAp funAddr argAddr) = hcat
     [ text "NAp "
     , showFWAddr funAddr
@@ -79,7 +79,7 @@ showAddr = int
 showFWAddr :: Addr -> Doc
 showFWAddr addr = indent (4 - (length $ show addr)) $ int addr
 
-showStats :: TiState -> Doc
+showStats :: State -> Doc
 showStats state = hcat
     [ line
     , text "Total number of steps = "

@@ -56,7 +56,7 @@ data Node
     | NMarked MarkState Node          -- ^ Marked node
     deriving (Show, Eq)
 
-type TiHeap = Heap Node
+type Heap = Heap Node
 
 data Primitive
     = Neg
@@ -80,36 +80,36 @@ data Primitive
     deriving (Show, Eq)
 
 -- The spine stack is a stack of heap addresses
-type TiStack = [Addr]
+type Stack = [Addr]
 
-type TiDump = [TiStack]
-initialTidump :: TiDump
-initialTidump = []
+type Dump = [Stack]
+initialdump :: Dump
+initialdump = []
 
-type TiOutput = [Int]
-type TiStats = Int
-type TiGlobals = H.HashMap Name Addr
+type Output = [Int]
+type Stats = Int
+type Globals = H.HashMap Name Addr
 
-data TiState = TiState
-    { _output  :: TiOutput
-    , _stack   :: TiStack
-    , _dump    :: TiDump
-    , _heap    :: TiHeap
-    , _globals :: TiGlobals
-    , _stats   :: TiStats
+data State = State
+    { _output  :: Output
+    , _stack   :: Stack
+    , _dump    :: Dump
+    , _heap    :: Heap
+    , _globals :: Globals
+    , _stats   :: Stats
     } deriving (Show)
-makeLenses ''TiState
+makeLenses ''State
 
 data PreludeAndPrims = PreludeAndPrims
     { prelude :: CoreProgram
     , prims :: [(Name, Primitive)]
     }
 
-tiStatInitial :: TiStats
+tiStatInitial :: Stats
 tiStatInitial = 0
 
 
-buildInitialHeap :: [CoreScDefn] -> [(Name, Primitive)] -> (TiHeap, TiGlobals)
+buildInitialHeap :: [CoreScDefn] -> [(Name, Primitive)] -> (Heap, Globals)
 buildInitialHeap scDefs prims = (heap2, H.fromList (scAddrs ++ primAddrs))
     where (heap1, scAddrs)   = mapAccumL allocateSc U.initial scDefs
           (heap2, primAddrs) = mapAccumL allocatePrim heap1 prims
@@ -117,10 +117,10 @@ buildInitialHeap scDefs prims = (heap2, H.fromList (scAddrs ++ primAddrs))
 -- allocateSc and allocatePrim have this weird signature (in the return
 -- type) because they're folded with mapAccumL. We fold the heap - building
 -- it up as we allocate, and accumulate a list of name-address mappings.
-allocateSc :: TiHeap -> CoreScDefn -> (TiHeap, (Name, Addr))
+allocateSc :: Heap -> CoreScDefn -> (Heap, (Name, Addr))
 allocateSc heap (name, args, body) = (heap', (name, addr))
     where (heap', addr) = U.alloc (NSupercomb name args body) heap
 
-allocatePrim :: TiHeap -> (Name, Primitive) -> (TiHeap, (Name, Addr))
+allocatePrim :: Heap -> (Name, Primitive) -> (Heap, (Name, Addr))
 allocatePrim heap (name, prim) = (heap', (name, addr))
     where (heap', addr) = U.alloc (NPrim name prim) heap

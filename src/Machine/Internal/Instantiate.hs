@@ -15,10 +15,10 @@ import qualified Machine.Internal.Heap as U
  -}
 instantiateAndUpdate :: CoreExpr            -- ^ body of supercombinator
                      -> Addr                -- ^ address of node to update
-                     -> TiHeap              -- ^ heap before instantiation
+                     -> Heap              -- ^ heap before instantiation
                      -- | associate parameters to addresses
-                     -> TiGlobals
-                     -> TiHeap              -- ^ heap after instantiation
+                     -> Globals
+                     -> Heap              -- ^ heap after instantiation
 instantiateAndUpdate (ENum n) updAddr heap _ = U.update updAddr (NNum n) heap
 -- replace the old application with the result of instantiation
 instantiateAndUpdate (EAp e1 e2) updAddr heap env =
@@ -37,9 +37,9 @@ instantiateAndUpdate (ECase e alts) updAddr heap env = error "Not yet!"
 instantiateAndUpdateConstr :: Int
                            -> Int
                            -> Addr
-                           -> TiHeap
-                           -> TiGlobals
-                           -> TiHeap
+                           -> Heap
+                           -> Globals
+                           -> Heap
 instantiateAndUpdateConstr tag arity updAddr heap env = U.update updAddr
     (NPrim "Pack" (PrimConstr tag arity)) heap
 
@@ -52,9 +52,9 @@ instantiateAndUpdateConstr tag arity updAddr heap env = U.update updAddr
 instantiateAndUpdateLet :: [(Name, CoreExpr)]
                         -> CoreExpr
                         -> Addr
-                        -> TiHeap
-                        -> TiGlobals
-                        -> TiHeap
+                        -> Heap
+                        -> Globals
+                        -> Heap
 instantiateAndUpdateLet defs body updAddr heap env = result where
     (resultHeap, resultEnv) = foldl' (\(heap', env') (a, expr) ->
         let (heap'', addr) = instantiate expr heap' resultEnv
@@ -63,10 +63,10 @@ instantiateAndUpdateLet defs body updAddr heap env = result where
     result = instantiateAndUpdate body updAddr resultHeap resultEnv
 
 instantiate :: CoreExpr -- ^ body of supercombinator
-            -> TiHeap   -- ^ heap before instantiation
+            -> Heap   -- ^ heap before instantiation
             -> H.HashMap Name Addr -- ^ association of names to addresses
             -- | heap after instantiation and address of root of instance
-            -> (TiHeap, Addr)
+            -> (Heap, Addr)
 instantiate (ENum n) heap _ = U.alloc (NNum n) heap
 instantiate (EAp e1 e2) heap env = U.alloc (NAp a1 a2) heap2 where
     (heap1, a1) = instantiate e1 heap env
@@ -89,9 +89,9 @@ instantiateConstr tag arity heap _ = U.alloc
  -}
 instantiateLet :: [(Name, CoreExpr)]
                -> CoreExpr
-               -> TiHeap
+               -> Heap
                -> H.HashMap Name Addr
-               -> (TiHeap, Addr)
+               -> (Heap, Addr)
 instantiateLet defs body heap env = result where
     (resultHeap, resultEnv) = foldl' (\(heap', env') (a, expr) ->
         let (heap'', addr) = (instantiate expr heap' resultEnv)

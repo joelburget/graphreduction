@@ -15,11 +15,11 @@ isDataNode (NNum _)    = True
 isDataNode (NData _ _) = True
 isDataNode _ = False
 
-getargs :: TiHeap -> TiStack -> [Addr]
+getargs :: Heap -> Stack -> [Addr]
 getargs heap (sc:stack) = map getArg stack where
     getArg addr = arg where (NAp _ arg) = U.lookup addr heap
 
-primStep :: TiState -> Primitive -> TiState
+primStep :: State -> Primitive -> State
 primStep state Neg = primNeg state
 primStep state Add = primArith state (+)
 primStep state Sub = primArith state (-)
@@ -39,14 +39,14 @@ primStep state CaseList = primCaseList state
 primStep state Print = primPrint state
 primStep state Stop = primStop state
 
-primArith :: TiState -> (Int -> Int -> Int) -> TiState
+primArith :: State -> (Int -> Int -> Int) -> State
 primArith state f = primDyadic state (\(NNum x) (NNum y) -> (NNum (f x y)))
 
-primComp :: TiState -> (Int -> Int -> Bool) -> TiState
+primComp :: State -> (Int -> Int -> Bool) -> State
 primComp state f = primDyadic state $ \(NNum x) (NNum y) ->
     (NData (if (f x y) then 2 else 1) [])
 
-primDyadic :: TiState -> (Node -> Node -> Node) -> TiState
+primDyadic :: State -> (Node -> Node -> Node) -> State
 primDyadic state f
     | length stack' > 3 = error $ "More than two arguments to dyadic prim"
     | length stack' < 3 = error $ "Less than two arguments to dyadic prim"
@@ -65,7 +65,7 @@ primDyadic state f
           m = U.lookup arg1Addr heap'
           n = U.lookup arg2Addr heap'
 
-primNeg :: TiState -> TiState
+primNeg :: State -> State
 primNeg state
     | length stack' > 2 = error $ "More than one argument to neg"
     | length stack' < 2 = error $ "No arguments to neg"
@@ -79,7 +79,7 @@ primNeg state
           arg = U.lookup argAddr heap'
           NNum n = arg
 
-followIndirection :: Node -> TiHeap -> Node
+followIndirection :: Node -> Heap -> Node
 followIndirection (NInd addr) heap = followIndirection (U.lookup addr heap) heap
 followIndirection node        _    = node
 
@@ -89,7 +89,7 @@ followIndirection node        _    = node
 --     a0:s d h[ a0:NPrim _ If
 --               a1:NData _ ] f
 -- ==>
-primIf :: TiState -> TiState
+primIf :: State -> State
 primIf state
     | length stack' < 4 = error $ "Less than three arguments to if"
     | length stack' > 4 = error $ "More than three arguments to if"
@@ -110,7 +110,7 @@ primIf state
           newHeap = U.update (stack' !! 3) (NInd branchAddr) heap'
           newStack = drop 3 stack'
 
-primCasePair :: TiState -> TiState
+primCasePair :: State -> State
 primCasePair state
     | length stack' < 3 = error $ "Less than two arguments to casePair"
     | length stack' > 3 = error $ "More than two arguments to casePair"
@@ -134,7 +134,7 @@ primCasePair state
           newHeap = U.update (last stack') (NInd newRoot) heap'''
           newStack = [fAddr, fAppA, newRoot]
 
-primCaseList :: TiState -> TiState
+primCaseList :: State -> State
 primCaseList state
     | length stack' < 4 = error $ "Less than three arguments to caseList"
     | length stack' > 4 = error $ "More than three arguments to caseList"
@@ -165,10 +165,10 @@ primCaseList state
                        (heap''', app2) = U.alloc (NAp app1 xsAddr) heap''
                    in (heap''', [ccAddr, app1, app2])
 
-primStop :: TiState -> TiState
+primStop :: State -> State
 primStop state = state & stack .~ []
 
-primPrint :: TiState -> TiState
+primPrint :: State -> State
 primPrint state
     | b1IsNum = state & output <>~ [n]
                       & stack .~ [b2]
@@ -188,7 +188,7 @@ primPrint state
 --                           ...
 --                           an:NAp a(n-1) bn        ]
 -- ==>           an:[] d h [ an:NData t [b1,...,bn]  ]   f
-primConstr :: TiState -> Int -> Int -> TiState
+primConstr :: State -> Int -> Int -> State
 primConstr state tag arity
     | length stack' > (arity + 1) = error $ "Too many arguments to constructor"
     | length stack' < (arity + 1) = error $ "Not enough arguments to constructor"
@@ -207,14 +207,14 @@ primConstr state tag arity
           -- (newHeap, dataAddr) = U.alloc (NData tag componentAddrs) (state^.heap)
           -- (newHeap, dataAddr) = instantiate constr (state^.heap)
 
-unDump :: TiState -> TiState
+unDump :: State -> State
 unDump state
     | state^.stack^.to length == 1 && not (null $ state^.dump)
     = state & stack .~ head (state^.dump)
             & dump  %~ tail
 unDump _ = error "Data applied as a function!"
 
-step :: TiState -> TiState
+step :: State -> State
 step state = dispatch $ U.lookup (head (state^.stack)) (state^.heap) where
     dispatch (NNum _) = unDump state
     dispatch (NAp a1 a2) = apStep state a1 a2
@@ -225,7 +225,7 @@ step state = dispatch $ U.lookup (head (state^.stack)) (state^.heap) where
     dispatch (NPrim _ prim) = primStep state prim
     dispatch (NData _ _) = unDump state
 
-apStep :: TiState -> Addr -> Addr -> TiState
+apStep :: State -> Addr -> Addr -> State
 apStep state a1 a2 = case state^.heap^.to (U.lookup a2) of
     NInd a2' -> state & heap  %~ U.update (head (state^.stack)) (NAp a1 a2')
     _        -> state & stack %~ (a1:)
@@ -240,7 +240,7 @@ apStep state a1 a2 = case state^.heap^.to (U.lookup a2) of
 -- indirection to ar (the root of the result). If the supercombinator is
 -- a CAF then n=0 and the node to be modified is the supercombinator node
 -- itself.
-scStep :: TiState -> Name -> [Name] -> CoreExpr -> TiState
+scStep :: State -> Name -> [Name] -> CoreExpr -> State
 scStep state _ argNames body = state & stack .~ newStack
                                      & heap  .~ newHeap
     where

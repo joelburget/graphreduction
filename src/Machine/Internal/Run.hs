@@ -10,9 +10,9 @@ import Machine.Internal.GC.MarkScan
 import qualified Machine.Internal.Heap as U
 import Machine.Internal.Step
 
-compileWith :: PreludeAndPrims -> CoreProgram -> TiState
+compileWith :: PreludeAndPrims -> CoreProgram -> State
 compileWith defs program =
-    TiState [] initialStack initialTidump initialHeap globals tiStatInitial
+    State [] initialStack initialdump initialHeap globals tiStatInitial
     where
         scDefs = prelude defs ++ program
         (initialHeap, globals) = buildInitialHeap scDefs (prims defs)
@@ -22,14 +22,14 @@ compileWith defs program =
         initialStack = [addressOfMain]
 
 -- | create the initial state of the machine from the program
-compile :: CoreProgram -> TiState
+compile :: CoreProgram -> State
 compile = compileWith (PreludeAndPrims preludeDefs primitives)
 
 -- TODO only gc when heap is bigger than some size
-doAdmin :: TiState -> TiState
+doAdmin :: State -> State
 doAdmin = gc . (& (stats +~ 1))
 
-tiFinal :: TiState -> Bool
+tiFinal :: State -> Bool
 tiFinal state = case state^.stack of
     [] -> True
     [soleAddr] -> dataNode && emptyDump
@@ -37,7 +37,7 @@ tiFinal state = case state^.stack of
               emptyDump = null $ state^.dump
     _ -> False
 
-eval :: TiState -> [TiState]
+eval :: State -> [State]
 eval state = state:restStates where
     restStates | tiFinal state = []
                | otherwise = eval nextState

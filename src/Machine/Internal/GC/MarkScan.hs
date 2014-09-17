@@ -14,7 +14,7 @@ import Machine.Internal.Pretty
 data MarkingMachine = MarkingMachine
     { _forwardP    :: Addr
     , _backwardP   :: Addr
-    , _machineHeap :: TiHeap
+    , _machineHeap :: Heap
     } deriving (Show)
 makeLenses ''MarkingMachine
 
@@ -27,20 +27,20 @@ makeLenses ''MarkingMachine
 --
 -- We use mapAccumL and mapAccumLOf to iteratively update the heap for each
 -- "entry point". Folding with the heap as the accumulator.
-markFromStack :: TiState -> TiState
+markFromStack :: State -> State
 markFromStack state = state & stack .~ newStack
                             & heap  .~ newHeap
     where (newHeap, newStack) = mapAccumL markFrom (state^.heap) (state^.stack)
 
 
-markFromDump :: TiState -> TiState
+markFromDump :: State -> State
 markFromDump state = state & dump .~ newDump
                            & heap .~ newHeap
     where (newHeap, newDump) = mapAccumLOf
               (traverse.traverse) markFrom (state^.heap) (state^.dump)
 
 
-markFromGlobals :: TiState -> TiState
+markFromGlobals :: State -> State
 markFromGlobals state = state & globals .~ newGlobals
                               & heap    .~ newHeap
     where (newHeap, newGlobals) =
@@ -53,7 +53,7 @@ markFromGlobals state = state & globals .~ newGlobals
 -- Keep running the marking machine over this heap until it's done. TODO
 -- - more detail on what running the machine means and what it means to be
 -- done
-markFrom :: TiHeap -> Addr -> (TiHeap, Addr)
+markFrom :: Heap -> Addr -> (Heap, Addr)
 markFrom heap addr = (finalMachine^.machineHeap, finalMachine^.forwardP) where
     startMachine = MarkingMachine addr U.null heap
     machines = iterate runMarkingMachine startMachine
@@ -142,7 +142,7 @@ runMarkingMachine machine = case machine^.(pointsTo forwardP) of
               machine^.machineHeap
 
 
-scanHeap :: TiState -> TiState
+scanHeap :: State -> State
 scanHeap state = state & heap .~ newHeap where
     addrs = U.addresses (state^.heap)
     newHeap = foldl (\heap' addr -> case U.lookup addr heap' of
@@ -151,5 +151,5 @@ scanHeap state = state & heap .~ newHeap where
         ) (state^.heap) addrs
 
 
-gc :: TiState -> TiState
+gc :: State -> State
 gc = scanHeap . markFromStack . markFromDump . markFromGlobals
