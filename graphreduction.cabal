@@ -17,14 +17,16 @@ cabal-version:       >=1.8
 library
   hs-source-dirs: src
   exposed-modules:
-    Machine.GraphReduction,
-    Machine.GarbageCollection,
-    Machine.Utils,
-    Machine.Pretty,
-    Machine.Instantiate,
-    Machine.Step
-    Machine.Run
-  -- other-modules:
+    Machine
+  other-modules:
+    Machine.Internal.Data,
+    Machine.Internal.Defs,
+    Machine.Internal.GC.MarkScan,
+    Machine.Internal.Heap,
+    Machine.Internal.Instantiate,
+    Machine.Internal.Pretty,
+    Machine.Internal.Run,
+    Machine.Internal.Step
   build-depends:
     base == 4.7.*,
     text >= 0.11,
@@ -32,20 +34,6 @@ library
     containers >= 0.5,
     unordered-containers >= 0.2,
     lens >= 3.9
-
-executable main
-  hs-source-dirs: src
-  main-is: Main.hs
-  -- ghc-options: -prof -auto-all
-  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields
-  build-depends:
-    base == 4.7.*,
-    text >= 0.11,
-    wl-pprint-text >= 1,
-    containers >= 0.5,
-    unordered-containers >= 0.2,
-    lens >= 3.9,
-    graphreduction
 
 test-suite tests
   type: exitcode-stdio-1.0

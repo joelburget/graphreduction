@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Machine.Pretty where
+module Machine.Internal.Pretty where
 
 import Control.Lens
 import qualified Data.IntMap.Lazy as M
@@ -9,9 +9,9 @@ import Data.Text hiding (length, intersperse, last, map, head, zip, drop,
 import Text.PrettyPrint.Leijen.Text
 import Data.Text.Lazy (fromStrict, toStrict)
 
-import Machine.GraphReduction
-import qualified Machine.Utils as U
-import Machine.Utils (Addr)
+import Machine.Internal.Data
+import qualified Machine.Internal.Heap as U
+import Machine.Internal.Heap (Addr)
 
 textify :: Doc -> Text
 textify = toStrict . displayT . renderPretty 0.9 80

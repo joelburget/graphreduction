@@ -1,12 +1,13 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Machine.Instantiate where
+module Machine.Internal.Instantiate where
 
 import qualified Data.HashMap.Lazy as H
 import Data.List (foldl')
 
-import Machine.GraphReduction
-import qualified Machine.Utils as U
-import Machine.Utils (Addr)
+import Machine.Internal.Data
+import Machine.Internal.GC.MarkScan
+import Machine.Internal.Heap (Addr)
+import qualified Machine.Internal.Heap as U
 
 {-
  - Instantiate the given supercombinator body, writing over the given

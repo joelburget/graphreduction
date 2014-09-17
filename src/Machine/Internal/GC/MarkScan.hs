@@ -1,16 +1,15 @@
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE TemplateHaskell #-}
-module Machine.GarbageCollection where
+module Machine.Internal.GC.MarkScan where
 
 import Control.Lens
 import Data.List (mapAccumL, find)
-
-import Machine.GraphReduction
-import qualified Machine.Utils as U
-import Machine.Utils (Addr)
-
 import qualified Data.Text as T
-import Machine.Pretty
+
+import Machine.Internal.Data
+import Machine.Internal.Heap (Addr)
+import qualified Machine.Internal.Heap as U
+import Machine.Internal.Pretty
 
 data MarkingMachine = MarkingMachine
     { _forwardP    :: Addr

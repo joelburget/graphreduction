@@ -10,18 +10,30 @@ import Test.Framework.Providers.HUnit
 
 import Test.HUnit ((@?=), assertEqual, Assertion)
 
-import qualified Machine.GarbageCollection as GC
-import Machine.GarbageCollection (forwardP, backwardP, machineHeap)
-import Machine.GraphReduction
-    -- ( Expr(..)
-    -- , Primitive(..)
-    -- , PreludeAndPrims(..)
-    -- , TiState(..)
-    -- )
-import Machine.Utils(Heap(..))
-import Machine.Run
-import qualified Machine.Utils as U
-import Machine.Utils (size)
+import qualified Machine as GC
+import qualified Machine as U
+import Machine (
+    CoreProgram,
+    Expr(..),
+    Heap(..),
+    IsRec(..),
+    MarkState(..),
+    Node(..),
+    PreludeAndPrims(..),
+    Primitive(..),
+    TiState,
+
+    backwardP,
+    compile,
+    compileWith,
+    eval,
+    forwardP,
+    heap,
+    machineHeap,
+    output,
+    size,
+    stack
+    )
 
 main :: IO ()
 main = defaultMain tests

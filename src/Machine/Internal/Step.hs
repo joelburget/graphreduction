@@ -1,12 +1,13 @@
-module Machine.Step where
+module Machine.Internal.Step where
 
 import Control.Lens
 import qualified Data.HashMap.Lazy as H
 
-import Machine.GraphReduction
-import Machine.Instantiate
-import qualified Machine.Utils as U
-import Machine.Utils (Addr)
+import Machine.Internal.Data
+import Machine.Internal.GC.MarkScan
+import Machine.Internal.Heap (Addr)
+import Machine.Internal.Instantiate
+import qualified Machine.Internal.Heap as U
 
 -- TODO use prism?
 isDataNode :: Node -> Bool

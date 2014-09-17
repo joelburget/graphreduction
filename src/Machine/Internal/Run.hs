@@ -1,13 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Machine.Run where
+module Machine.Internal.Run where
 
 import Control.Lens
 import Data.Maybe (fromMaybe)
 
-import Machine.GraphReduction
-import Machine.GarbageCollection
-import Machine.Step
-import qualified Machine.Utils as U
+import Machine.Internal.Data
+import Machine.Internal.Defs
+import Machine.Internal.GC.MarkScan
+import qualified Machine.Internal.Heap as U
+import Machine.Internal.Step
 
 compileWith :: PreludeAndPrims -> CoreProgram -> TiState
 compileWith defs program =

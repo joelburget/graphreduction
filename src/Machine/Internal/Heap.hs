@@ -1,5 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
-module Machine.Utils where
+module Machine.Internal.Heap where
 
 import Control.Lens
 import Data.IntMap.Lazy as M hiding (size, map)
